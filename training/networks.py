@@ -17,13 +17,13 @@ from torch_utils.ops import fma
 
 #----------------------------------------------------------------------------
 
-@misc.profiled_function
+
 def normalize_2nd_moment(x, dim=1, eps=1e-8):
     return x * (x.square().mean(dim=dim, keepdim=True) + eps).rsqrt()
 
 #----------------------------------------------------------------------------
 
-@misc.profiled_function
+
 def modulated_conv2d(
     x,                          # Input tensor of shape [batch_size, in_channels, in_height, in_width].
     weight,                     # Weight tensor of shape [out_channels, in_channels, kernel_height, kernel_width].
@@ -161,6 +161,7 @@ class Conv2dLayer(torch.nn.Module):
         w = self.weight * self.weight_gain
         b = self.bias.to(x.dtype) if self.bias is not None else None
         flip_weight = (self.up == 1) # slightly faster
+        impl = "cuda" if x.device == "cuda" else "ref"
         x = conv2d_resample.conv2d_resample(x=x, w=w.to(x.dtype), f=self.resample_filter, up=self.up, down=self.down, padding=self.padding, flip_weight=flip_weight)
 
         act_gain = self.act_gain * gain

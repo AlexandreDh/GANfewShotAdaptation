@@ -13,11 +13,12 @@ import torch
 import warnings
 import dnnlib
 
-#----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Cached construction of constant tensors. Avoids CPU=>GPU copy when the
 # same constant is used multiple times.
 
 _constant_cache = dict()
+
 
 def constant(value, shape=None, dtype=None, device=None, memory_format=None):
     value = np.asarray(value)
@@ -40,13 +41,14 @@ def constant(value, shape=None, dtype=None, device=None, memory_format=None):
         _constant_cache[key] = tensor
     return tensor
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 # Replace NaN/Inf with specified numerical values.
 
 try:
-    nan_to_num = torch.nan_to_num # 1.8.0a0
+    nan_to_num = torch.nan_to_num  # 1.8.0a0
 except AttributeError:
-    def nan_to_num(input, nan=0.0, posinf=None, neginf=None, *, out=None): # pylint: disable=redefined-builtin
+    def nan_to_num(input, nan=0.0, posinf=None, neginf=None, *, out=None):  # pylint: disable=redefined-builtin
         assert isinstance(input, torch.Tensor)
         if posinf is None:
             posinf = torch.finfo(input.dtype).max
@@ -55,15 +57,16 @@ except AttributeError:
         assert nan == 0
         return torch.clamp(input.unsqueeze(0).nansum(0), min=neginf, max=posinf, out=out)
 
-#----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 # Symbolic assert.
 
 try:
-    symbolic_assert = torch._assert # 1.8.0a0 # pylint: disable=protected-access
+    symbolic_assert = torch._assert  # 1.8.0a0 # pylint: disable=protected-access
 except AttributeError:
-    symbolic_assert = torch.Assert # 1.7.0
+    symbolic_assert = torch.Assert  # 1.7.0
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 # Context manager to suppress known warnings in torch.jit.trace().
 
 class suppress_tracer_warnings(warnings.catch_warnings):
@@ -72,7 +75,8 @@ class suppress_tracer_warnings(warnings.catch_warnings):
         warnings.simplefilter('ignore', category=torch.jit.TracerWarning)
         return self
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 # Assert that the shape of a tensor matches the given list of integers.
 # None indicates that the size of a dimension is allowed to vary.
 # Performs symbolic assertion when used in torch.jit.trace().
@@ -84,25 +88,29 @@ def assert_shape(tensor, ref_shape):
         if ref_size is None:
             pass
         elif isinstance(ref_size, torch.Tensor):
-            with suppress_tracer_warnings(): # as_tensor results are registered as constants
+            with suppress_tracer_warnings():  # as_tensor results are registered as constants
                 symbolic_assert(torch.equal(torch.as_tensor(size), ref_size), f'Wrong size for dimension {idx}')
         elif isinstance(size, torch.Tensor):
-            with suppress_tracer_warnings(): # as_tensor results are registered as constants
-                symbolic_assert(torch.equal(size, torch.as_tensor(ref_size)), f'Wrong size for dimension {idx}: expected {ref_size}')
+            with suppress_tracer_warnings():  # as_tensor results are registered as constants
+                symbolic_assert(torch.equal(size, torch.as_tensor(ref_size)),
+                                f'Wrong size for dimension {idx}: expected {ref_size}')
         elif size != ref_size:
             raise AssertionError(f'Wrong size for dimension {idx}: got {size}, expected {ref_size}')
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 # Function decorator that calls torch.autograd.profiler.record_function().
 
 def profiled_function(fn):
     def decorator(*args, **kwargs):
         with torch.autograd.profiler.record_function(fn.__name__):
             return fn(*args, **kwargs)
+
     decorator.__name__ = fn.__name__
     return decorator
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 # Sampler for torch.utils.data.DataLoader that loops over the dataset
 # indefinitely, shuffling items as it goes.
 
@@ -139,16 +147,19 @@ class InfiniteSampler(torch.utils.data.Sampler):
                 order[i], order[j] = order[j], order[i]
             idx += 1
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 # Utilities for operating with torch.nn.Module parameters and buffers.
 
 def params_and_buffers(module):
     assert isinstance(module, torch.nn.Module)
     return list(module.parameters()) + list(module.buffers())
 
+
 def named_params_and_buffers(module):
     assert isinstance(module, torch.nn.Module)
     return list(module.named_parameters()) + list(module.named_buffers())
+
 
 def copy_params_and_buffers(src_module, dst_module, require_all=False):
     assert isinstance(src_module, torch.nn.Module)
@@ -159,7 +170,8 @@ def copy_params_and_buffers(src_module, dst_module, require_all=False):
         if name in src_tensors:
             tensor.copy_(src_tensors[name].detach()).requires_grad_(tensor.requires_grad)
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 # Context manager for easily enabling/disabling DistributedDataParallel
 # synchronization.
 
@@ -172,7 +184,8 @@ def ddp_sync(module, sync):
         with module.no_sync():
             yield
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 # Check DistributedDataParallel consistency across processes.
 
 def check_ddp_consistency(module, ignore_regex=None):
@@ -186,10 +199,11 @@ def check_ddp_consistency(module, ignore_regex=None):
         torch.distributed.broadcast(tensor=other, src=0)
         assert (nan_to_num(tensor) == nan_to_num(other)).all(), fullname
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 # Print summary table of module hierarchy.
 
-def print_module_summary(module, inputs, max_nesting=3, skip_redundant=True):
+def print_module_summary(module, inputs, max_nesting=3, skip_redundant=True, print=print):
     assert isinstance(module, torch.nn.Module)
     assert not isinstance(module, torch.jit.ScriptModule)
     assert isinstance(inputs, (tuple, list))
@@ -197,14 +211,17 @@ def print_module_summary(module, inputs, max_nesting=3, skip_redundant=True):
     # Register hooks.
     entries = []
     nesting = [0]
+
     def pre_hook(_mod, _inputs):
         nesting[0] += 1
+
     def post_hook(mod, _inputs, outputs):
         nesting[0] -= 1
         if nesting[0] <= max_nesting:
             outputs = list(outputs) if isinstance(outputs, (tuple, list)) else [outputs]
             outputs = [t for t in outputs if isinstance(t, torch.Tensor)]
             entries.append(dnnlib.EasyDict(mod=mod, outputs=outputs))
+
     hooks = [mod.register_forward_pre_hook(pre_hook) for mod in module.modules()]
     hooks += [mod.register_forward_hook(post_hook) for mod in module.modules()]
 
@@ -259,4 +276,4 @@ def print_module_summary(module, inputs, max_nesting=3, skip_redundant=True):
     print()
     return outputs
 
-#----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------

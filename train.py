@@ -10,7 +10,7 @@
 "Deceive D: Adaptive Pseudo Augmentation for GAN Training with Limited Data".
 The code is heavily borrowed from the paper
 "Training Generative Adversarial Networks with Limited Data"."""
-
+import copy
 import os
 import click
 import re
@@ -18,58 +18,63 @@ import json
 import tempfile
 import torch
 import dnnlib
+import legacy
 
 from training import training_loop
 from metrics import metric_main
-from torch_utils import training_stats
+from torch_utils import training_stats, misc
 from torch_utils import custom_ops
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 
 class UserError(Exception):
     pass
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 
 def setup_training_loop_kwargs(
-    # General options (not included in desc).
-    gpus         = None, # Number of GPUs: <int>, default = 1 gpu
-    snap         = None, # Snapshot interval: <int>, default = 50 ticks
-    seed         = None, # Random seed: <int>, default = 0
+        # General options (not included in desc).
+        gpus=None,  # Number of GPUs: <int>, default = 1 gpu
+        snap=None,  # Snapshot interval: <int>, default = 50 ticks
+        seed=None,  # Random seed: <int>, default = 0
 
-    # Dataset.
-    data         = None, # Training dataset (required): <path>
-    cond         = None, # Train conditional model based on dataset labels: <bool>, default = False
-    subset       = None, # Train with only N images: <int>, default = all
-    mirror       = None, # Augment dataset with x-flips: <bool>, default = False
+        # Dataset.
+        data=None,  # Training dataset (required): <path>
+        cond=None,  # Train conditional model based on dataset labels: <bool>, default = False
+        subset=None,  # Train with only N images: <int>, default = all
+        mirror=None,  # Augment dataset with x-flips: <bool>, default = False
 
-    # Metrics (not included in desc).
-    metrics      = None, # List of metric names: [], ['fid50k_full'] (default), ...
-    metricdata   = None, # Metric dataset (optional): <path>
+        # Metrics (not included in desc).
+        metrics=None,  # List of metric names: [], ['fid50k_full'] (default), ...
+        metricdata=None,  # Metric dataset (optional): <path>
 
-    # Base config.
-    cfg          = None, # Base config: 'auto' (default), 'stylegan2', 'paper256', 'paper512', 'paper1024', 'cifar'
-    gamma        = None, # Override R1 gamma: <float>
-    kimg         = None, # Override training duration: <int>
-    batch        = None, # Override batch size: <int>
+        # Base config.
+        cfg=None,  # Base config: 'auto' (default), 'stylegan2', 'paper256', 'paper512', 'paper1024', 'cifar'
+        gamma=None,  # Override R1 gamma: <float>
+        kimg=None,  # Override training duration: <int>
+        batch=None,  # Override batch size: <int>
 
-    # Discriminator augmentation.
-    aug          = None, # Augmentation mode: 'apa' (default), 'noaug', 'fixed'
-    p            = None, # Specify p for 'fixed' (required): <float>
-    target       = None, # Override APA target for 'apa': <float>, default = depends on aug
-    augpipe      = None, # Augmentation pipeline: 'blit', 'geom', 'color', 'filter', 'noise', 'cutout', 'bg', 'bgc' (default), ..., 'bgcfnc'
-    with_dataaug = None, # Enable standard data augmentations for the discriminator inputs: <bool>, default = False
+        # Discriminator augmentation.
+        aug=None,  # Augmentation mode: 'apa' (default), 'noaug', 'fixed'
+        p=None,  # Specify p for 'fixed' (required): <float>
+        target=None,  # Override APA target for 'apa': <float>, default = depends on aug
+        augpipe=None,
+        # Augmentation pipeline: 'blit', 'geom', 'color', 'filter', 'noise', 'cutout', 'bg', 'bgc' (default), ..., 'bgcfnc'
+        with_dataaug=None,  # Enable standard data augmentations for the discriminator inputs: <bool>, default = False
 
-    # Transfer learning.
-    resume       = None, # Load previous network: 'noresume' (default), 'ffhq256', 'ffhq512', 'ffhq1024', 'celebahq256', 'lsundog256', <file>, <url>
-    freezed      = None, # Freeze-D: <int>, default = 0 discriminator layers
+        # Transfer learning.
+        resume=None,
+        # Load previous network: 'noresume' (default), 'ffhq256', 'ffhq512', 'ffhq1024', 'celebahq256', 'lsundog256', <file>, <url>
+        freezed=None,  # Freeze-D: <int>, default = 0 discriminator layers
 
-    # Performance options (not included in desc).
-    fp32         = None, # Disable mixed-precision training: <bool>, default = False
-    nhwc         = None, # Use NHWC memory format with FP16: <bool>, default = False
-    allow_tf32   = None, # Allow PyTorch to use TF32 for matmul and convolutions: <bool>, default = False
-    nobench      = None, # Disable cuDNN benchmarking: <bool>, default = False
-    workers      = None, # Override number of DataLoader workers: <int>, default = 3
+        # Performance options (not included in desc).
+        fp32=None,  # Disable mixed-precision training: <bool>, default = False
+        nhwc=None,  # Use NHWC memory format with FP16: <bool>, default = False
+        allow_tf32=None,  # Allow PyTorch to use TF32 for matmul and convolutions: <bool>, default = False
+        nobench=None,  # Disable cuDNN benchmarking: <bool>, default = False
+        workers=None,  # Override number of DataLoader workers: <int>, default = 3
 ):
     args = dnnlib.EasyDict()
 
@@ -103,15 +108,17 @@ def setup_training_loop_kwargs(
 
     assert data is not None
     assert isinstance(data, str)
-    args.training_set_kwargs = dnnlib.EasyDict(class_name='training.dataset.ImageFolderDataset', path=data, use_labels=True, max_size=None, xflip=False)
+    args.training_set_kwargs = dnnlib.EasyDict(class_name='training.dataset.ImageFolderDataset', path=data,
+                                               use_labels=True, max_size=None, xflip=False)
     args.data_loader_kwargs = dnnlib.EasyDict(pin_memory=True, num_workers=3, prefetch_factor=2)
     try:
-        training_set = dnnlib.util.construct_class_by_name(**args.training_set_kwargs) # subclass of training.dataset.Dataset
-        args.training_set_kwargs.resolution = training_set.resolution # be explicit about resolution
-        args.training_set_kwargs.use_labels = training_set.has_labels # be explicit about labels
-        args.training_set_kwargs.max_size = len(training_set) # be explicit about dataset size
+        training_set = dnnlib.util.construct_class_by_name(
+            **args.training_set_kwargs)  # subclass of training.dataset.Dataset
+        args.training_set_kwargs.resolution = training_set.resolution  # be explicit about resolution
+        args.training_set_kwargs.use_labels = training_set.has_labels  # be explicit about labels
+        args.training_set_kwargs.max_size = len(training_set)  # be explicit about dataset size
         desc = training_set.name
-        del training_set # conserve memory
+        del training_set  # conserve memory
     except IOError as err:
         raise UserError(f'--data: {err}')
 
@@ -149,7 +156,8 @@ def setup_training_loop_kwargs(
         metrics = ['fid50k_full']
     assert isinstance(metrics, list)
     if not all(metric_main.is_valid_metric(metric) for metric in metrics):
-        raise UserError('\n'.join(['--metrics can only contain the following values:'] + metric_main.list_valid_metrics()))
+        raise UserError(
+            '\n'.join(['--metrics can only contain the following values:'] + metric_main.list_valid_metrics()))
     args.metrics = metrics
 
     args.metric_dataset_kwargs = dnnlib.EasyDict(args.training_set_kwargs)
@@ -157,11 +165,12 @@ def setup_training_loop_kwargs(
         assert isinstance(metricdata, str)
         args.metric_dataset_kwargs.path = metricdata
         try:
-            metric_dataset = dnnlib.util.construct_class_by_name(**args.metric_dataset_kwargs)  # subclass of training.dataset.Dataset
+            metric_dataset = dnnlib.util.construct_class_by_name(
+                **args.metric_dataset_kwargs)  # subclass of training.dataset.Dataset
             args.metric_dataset_kwargs.resolution = metric_dataset.resolution  # be explicit about resolution
             args.metric_dataset_kwargs.use_labels = metric_dataset.has_labels  # be explicit about labels
             args.metric_dataset_kwargs.max_size = None  # no limit to the dataset for metrics
-            del metric_dataset # conserve memory
+            del metric_dataset  # conserve memory
         except IOError as err:
             raise UserError(f'--metricdata: {err}')
 
@@ -175,12 +184,18 @@ def setup_training_loop_kwargs(
     desc += f'-{cfg}'
 
     cfg_specs = {
-        'auto':      dict(ref_gpus=-1, kimg=25000,  mb=-1, mbstd=-1, fmaps=-1,  lrate=-1,     gamma=-1,   ema=-1,  ramp=0.05, map=2), # Populated dynamically based on resolution and GPU count.
-        'stylegan2': dict(ref_gpus=8,  kimg=25000,  mb=32, mbstd=4,  fmaps=1,   lrate=0.002,  gamma=10,   ema=10,  ramp=None, map=8), # Uses mixed-precision, unlike the original StyleGAN2.
-        'paper256':  dict(ref_gpus=8,  kimg=25000,  mb=64, mbstd=8,  fmaps=0.5, lrate=0.0025, gamma=1,    ema=20,  ramp=None, map=8),
-        'paper512':  dict(ref_gpus=8,  kimg=25000,  mb=64, mbstd=8,  fmaps=1,   lrate=0.0025, gamma=0.5,  ema=20,  ramp=None, map=8),
-        'paper1024': dict(ref_gpus=8,  kimg=25000,  mb=32, mbstd=4,  fmaps=1,   lrate=0.002,  gamma=2,    ema=10,  ramp=None, map=8),
-        'cifar':     dict(ref_gpus=2,  kimg=100000, mb=64, mbstd=32, fmaps=1,   lrate=0.0025, gamma=0.01, ema=500, ramp=0.05, map=2),
+        'auto': dict(ref_gpus=-1, kimg=25000, mb=-1, mbstd=-1, fmaps=-1, lrate=-1, gamma=-1, ema=-1, ramp=0.05, map=2),
+        # Populated dynamically based on resolution and GPU count.
+        'stylegan2': dict(ref_gpus=8, kimg=25000, mb=32, mbstd=4, fmaps=1, lrate=0.002, gamma=10, ema=10, ramp=None,
+                          map=8),  # Uses mixed-precision, unlike the original StyleGAN2.
+        'paper256': dict(ref_gpus=8, kimg=25000, mb=64, mbstd=8, fmaps=0.5, lrate=0.0025, gamma=1, ema=20, ramp=None,
+                         map=8),
+        'paper512': dict(ref_gpus=8, kimg=25000, mb=64, mbstd=8, fmaps=1, lrate=0.0025, gamma=0.5, ema=20, ramp=None,
+                         map=8),
+        'paper1024': dict(ref_gpus=8, kimg=25000, mb=32, mbstd=4, fmaps=1, lrate=0.002, gamma=2, ema=10, ramp=None,
+                          map=8),
+        'cifar': dict(ref_gpus=2, kimg=100000, mb=64, mbstd=32, fmaps=1, lrate=0.0025, gamma=0.01, ema=500, ramp=0.05,
+                      map=2),
     }
 
     assert cfg in cfg_specs
@@ -190,24 +205,27 @@ def setup_training_loop_kwargs(
         desc += f'{gpus:d}'
         spec.ref_gpus = gpus
         res = args.training_set_kwargs.resolution
-        spec.mb = max(min(gpus * min(4096 // res, 32), 64), gpus) # keep gpu memory consumption at bay
-        spec.mbstd = min(spec.mb // gpus, 4) # other hyperparams behave more predictably if mbstd group size remains fixed
+        spec.mb = max(min(gpus * min(4096 // res, 32), 64), gpus)  # keep gpu memory consumption at bay
+        spec.mbstd = min(spec.mb // gpus,
+                         4)  # other hyperparams behave more predictably if mbstd group size remains fixed
         spec.fmaps = 1 if res >= 512 else 0.5
         spec.lrate = 0.002 if res >= 1024 else 0.0025
-        spec.gamma = 0.0002 * (res ** 2) / spec.mb # heuristic formula
+        spec.gamma = 0.0002 * (res ** 2) / spec.mb  # heuristic formula
         spec.ema = spec.mb * 10 / 32
 
-    args.G_kwargs = dnnlib.EasyDict(class_name='training.networks.Generator', z_dim=512, w_dim=512, mapping_kwargs=dnnlib.EasyDict(), synthesis_kwargs=dnnlib.EasyDict())
-    args.D_kwargs = dnnlib.EasyDict(class_name='training.networks.Discriminator', block_kwargs=dnnlib.EasyDict(), mapping_kwargs=dnnlib.EasyDict(), epilogue_kwargs=dnnlib.EasyDict())
+    args.G_kwargs = dnnlib.EasyDict(class_name='training.networks.Generator', z_dim=512, w_dim=512,
+                                    mapping_kwargs=dnnlib.EasyDict(), synthesis_kwargs=dnnlib.EasyDict())
+    args.D_kwargs = dnnlib.EasyDict(class_name='training.networks.Discriminator', block_kwargs=dnnlib.EasyDict(),
+                                    mapping_kwargs=dnnlib.EasyDict(), epilogue_kwargs=dnnlib.EasyDict())
     args.G_kwargs.synthesis_kwargs.channel_base = args.D_kwargs.channel_base = int(spec.fmaps * 32768)
     args.G_kwargs.synthesis_kwargs.channel_max = args.D_kwargs.channel_max = 512
     args.G_kwargs.mapping_kwargs.num_layers = spec.map
-    args.G_kwargs.synthesis_kwargs.num_fp16_res = args.D_kwargs.num_fp16_res = 4 # enable mixed-precision training
-    args.G_kwargs.synthesis_kwargs.conv_clamp = args.D_kwargs.conv_clamp = 256 # clamp activations to avoid float16 overflow
+    args.G_kwargs.synthesis_kwargs.num_fp16_res = args.D_kwargs.num_fp16_res = 4  # enable mixed-precision training
+    args.G_kwargs.synthesis_kwargs.conv_clamp = args.D_kwargs.conv_clamp = 256  # clamp activations to avoid float16 overflow
     args.D_kwargs.epilogue_kwargs.mbstd_group_size = spec.mbstd
 
-    args.G_opt_kwargs = dnnlib.EasyDict(class_name='torch.optim.Adam', lr=spec.lrate, betas=[0,0.99], eps=1e-8)
-    args.D_opt_kwargs = dnnlib.EasyDict(class_name='torch.optim.Adam', lr=spec.lrate, betas=[0,0.99], eps=1e-8)
+    args.G_opt_kwargs = dnnlib.EasyDict(class_name='torch.optim.Adam', lr=spec.lrate, betas=[0, 0.99], eps=1e-8)
+    args.D_opt_kwargs = dnnlib.EasyDict(class_name='torch.optim.Adam', lr=spec.lrate, betas=[0, 0.99], eps=1e-8)
     args.loss_kwargs = dnnlib.EasyDict(class_name='training.loss.StyleGAN2Loss', r1_gamma=spec.gamma)
 
     args.total_kimg = spec.kimg
@@ -217,9 +235,9 @@ def setup_training_loop_kwargs(
     args.ema_rampup = spec.ramp
 
     if cfg == 'cifar':
-        args.loss_kwargs.pl_weight = 0 # disable path length regularization
-        args.loss_kwargs.style_mixing_prob = 0 # disable style mixing
-        args.D_kwargs.architecture = 'orig' # disable residual skip connections
+        args.loss_kwargs.pl_weight = 0  # disable path length regularization
+        args.loss_kwargs.style_mixing_prob = 0  # disable style mixing
+        args.D_kwargs.architecture = 'orig'  # disable residual skip connections
 
     if gamma is not None:
         assert isinstance(gamma, float)
@@ -302,17 +320,21 @@ def setup_training_loop_kwargs(
         desc += f'-{augpipe}'
 
     augpipe_specs = {
-        'blit':   dict(xflip=1, rotate90=1, xint=1),
-        'geom':   dict(scale=1, rotate=1, aniso=1, xfrac=1),
-        'color':  dict(brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1),
+        'blit': dict(xflip=1, rotate90=1, xint=1),
+        'geom': dict(scale=1, rotate=1, aniso=1, xfrac=1),
+        'color': dict(brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1),
         'filter': dict(imgfilter=1),
-        'noise':  dict(noise=1),
+        'noise': dict(noise=1),
         'cutout': dict(cutout=1),
-        'bg':     dict(xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1),
-        'bgc':    dict(xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1),
-        'bgcf':   dict(xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1, imgfilter=1),
-        'bgcfn':  dict(xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1, imgfilter=1, noise=1),
-        'bgcfnc': dict(xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=1, contrast=1, lumaflip=1, hue=1, saturation=1, imgfilter=1, noise=1, cutout=1),
+        'bg': dict(xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1),
+        'bgc': dict(xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=1, contrast=1,
+                    lumaflip=1, hue=1, saturation=1),
+        'bgcf': dict(xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=1, contrast=1,
+                     lumaflip=1, hue=1, saturation=1, imgfilter=1),
+        'bgcfn': dict(xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=1, contrast=1,
+                      lumaflip=1, hue=1, saturation=1, imgfilter=1, noise=1),
+        'bgcfnc': dict(xflip=1, rotate90=1, xint=1, scale=1, rotate=1, aniso=1, xfrac=1, brightness=1, contrast=1,
+                       lumaflip=1, hue=1, saturation=1, imgfilter=1, noise=1, cutout=1),
     }
 
     assert augpipe in augpipe_specs
@@ -324,11 +346,11 @@ def setup_training_loop_kwargs(
     # ----------------------------------
 
     resume_specs = {
-        'ffhq256':     'https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/transfer-learning-source-nets/ffhq-res256-mirror-paper256-noaug.pkl',
-        'ffhq512':     'https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/transfer-learning-source-nets/ffhq-res512-mirror-stylegan2-noaug.pkl',
-        'ffhq1024':    'https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/transfer-learning-source-nets/ffhq-res1024-mirror-stylegan2-noaug.pkl',
+        'ffhq256': 'https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/transfer-learning-source-nets/ffhq-res256-mirror-paper256-noaug.pkl',
+        'ffhq512': 'https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/transfer-learning-source-nets/ffhq-res512-mirror-stylegan2-noaug.pkl',
+        'ffhq1024': 'https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/transfer-learning-source-nets/ffhq-res1024-mirror-stylegan2-noaug.pkl',
         'celebahq256': 'https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/transfer-learning-source-nets/celebahq-res256-mirror-paper256-kimg100000-ada-target0.5.pkl',
-        'lsundog256':  'https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/transfer-learning-source-nets/lsundog-res256-paper256-kimg100000-noaug.pkl',
+        'lsundog256': 'https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/transfer-learning-source-nets/lsundog-res256-paper256-kimg100000-noaug.pkl',
     }
 
     assert resume is None or isinstance(resume, str)
@@ -338,14 +360,14 @@ def setup_training_loop_kwargs(
         desc += '-noresume'
     elif resume in resume_specs:
         desc += f'-resume{resume}'
-        args.resume_pkl = resume_specs[resume] # predefined url
+        args.resume_pkl = resume_specs[resume]  # predefined url
     else:
         desc += '-resumecustom'
-        args.resume_pkl = resume # custom path or url
+        args.resume_pkl = resume  # custom path or url
 
     if resume != 'noresume':
-        args.apa_kimg = 100 # make APA react faster at the beginning
-        args.ema_rampup = None # disable EMA rampup
+        args.apa_kimg = 100  # make APA react faster at the beginning
+        args.ema_rampup = None  # disable EMA rampup
 
     if freezed is not None:
         assert isinstance(freezed, int)
@@ -391,7 +413,8 @@ def setup_training_loop_kwargs(
 
     return desc, args
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 
 def subprocess_fn(rank, args, temp_dir):
     dnnlib.util.Logger(file_name=os.path.join(args.run_dir, 'log.txt'), file_mode='a', should_flush=True)
@@ -401,10 +424,12 @@ def subprocess_fn(rank, args, temp_dir):
         init_file = os.path.abspath(os.path.join(temp_dir, '.torch_distributed_init'))
         if os.name == 'nt':
             init_method = 'file:///' + init_file.replace('\\', '/')
-            torch.distributed.init_process_group(backend='gloo', init_method=init_method, rank=rank, world_size=args.num_gpus)
+            torch.distributed.init_process_group(backend='gloo', init_method=init_method, rank=rank,
+                                                 world_size=args.num_gpus)
         else:
             init_method = f'file://{init_file}'
-            torch.distributed.init_process_group(backend='nccl', init_method=init_method, rank=rank, world_size=args.num_gpus)
+            torch.distributed.init_process_group(backend='nccl', init_method=init_method, rank=rank,
+                                                 world_size=args.num_gpus)
 
     # Init torch_utils.
     sync_device = torch.device('cuda', rank) if args.num_gpus > 1 else None
@@ -412,10 +437,73 @@ def subprocess_fn(rank, args, temp_dir):
     if rank != 0:
         custom_ops.verbosity = 'none'
 
-    # Execute training loop.
-    training_loop.training_loop(rank=rank, **args)
+    # Construct networks.
+    if rank == 0:
+        print('Constructing networks...')
 
-#----------------------------------------------------------------------------
+    device = torch.device('cuda', rank)
+    common_kwargs = dict(c_dim=args.training_set_kwargs.label_dim, img_resolution=args.training_set_kwargs.resolution,
+                         img_channels=args.training_set_kwargs.num_channels)
+    G = dnnlib.util.construct_class_by_name(**args.G_kwargs, **common_kwargs).train().requires_grad_(False).to(
+        device)  # subclass of torch.nn.Module
+    D = dnnlib.util.construct_class_by_name(**args.D_kwargs, **common_kwargs).train().requires_grad_(False).to(
+        device)  # subclass of torch.nn.Module
+    G_ema = copy.deepcopy(G).eval()
+
+    args.augment_pipe = None
+
+    if (args.augment_kwargs is not None) and (args.augment_p > 0 or args.apa_target is not None):
+        args.augment_pipe = dnnlib.util.construct_class_by_name(**args.augment_kwargs).train().requires_grad_(False).to(
+            device)  # subclass of torch.nn.Module
+
+
+    # Resume from existing pickle.
+    if (args.resume_pkl is not None) and (rank == 0):
+        print(f'Resuming from "{args.resume_pkl}"')
+        with dnnlib.util.open_url(args.resume_pkl) as f:
+            resume_data = legacy.load_network_pkl(f)
+        for name, module in [('G', G), ('D', D), ('G_ema', G_ema)]:
+            misc.copy_params_and_buffers(resume_data[name], module, require_all=False)
+
+    # Execute training loop.
+    training_loop.training_loop(G, D, G_ema, rank=rank, **args)
+
+
+# ----------------------------------------------------------------------------
+
+def subprocess_tpu_fn(rank, args):
+    dnnlib.util.Logger(file_name=os.path.join(args.run_dir, 'log.txt'), file_mode='a', should_flush=True)
+
+    training_loop.training_loop(args.G, args.D, args.G_ema, rank=rank, running_xla=True, **args)
+
+
+def prepare_tpu_run(args):
+    import torch_xla.distributed.xla_multiprocessing as xmp
+
+    print('Constructing networks...')
+
+    common_kwargs = dict(c_dim=args.training_set_kwargs.label_dim, img_resolution=args.training_set_kwargs.resolution,
+                         img_channels=args.training_set_kwargs.num_channels)
+    G_cpu = dnnlib.util.construct_class_by_name(**args.G_kwargs, **common_kwargs).train().requires_grad_(False)
+    D_cpu = dnnlib.util.construct_class_by_name(**args.D_kwargs, **common_kwargs).train().requires_grad_(False)
+    G_ema_cpu = copy.deepcopy(G_cpu).eval()
+    augment_pipe = dnnlib.util.construct_class_by_name(**args.augment_kwargs).train().requires_grad_(False)
+
+    # Resume from existing pickle.
+    if args.resume_pkl is not None:
+        print(f'Resuming from "{args.resume_pkl}"')
+        with dnnlib.util.open_url(args.resume_pkl) as f:
+            resume_data = legacy.load_network_pkl(f)
+        for name, module in [('G', G_cpu), ('D', D_cpu), ('G_ema', G_ema_cpu)]:
+            misc.copy_params_and_buffers(resume_data[name], module, require_all=False)
+
+    args.G = xmp.MpModelWrapper(G_cpu)
+    args.D = xmp.MpModelWrapper(D_cpu)
+    args.G_ema = xmp.MpModelWrapper(G_ema_cpu)
+    args.augment_pipe = xmp.MpModelWrapper(augment_pipe)
+
+    xmp.spawn(subprocess_tpu_fn, args=(args,), nprocs=args.num_gpus,
+              start_method='fork')
 
 class CommaSeparatedList(click.ParamType):
     name = 'list'
@@ -426,52 +514,52 @@ class CommaSeparatedList(click.ParamType):
             return []
         return value.split(',')
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 
 @click.command()
 @click.pass_context
-
 # General options.
 @click.option('--outdir', help='Where to save the results', required=True, metavar='DIR')
 @click.option('--gpus', help='Number of GPUs to use [default: 1]', type=int, metavar='INT')
+@click.option('--use_tpu', help='Use TPU for training [default: false]', type=bool, metavar='BOOL')
 @click.option('--snap', help='Snapshot interval [default: 50 ticks]', type=int, metavar='INT')
 @click.option('--seed', help='Random seed [default: 0]', type=int, metavar='INT')
 @click.option('-n', '--dry-run', help='Print training options and exit', is_flag=True)
-
 # Dataset.
 @click.option('--data', help='Training data (directory or zip)', metavar='PATH', required=True)
-@click.option('--cond', help='Train conditional model based on dataset labels [default: false]', type=bool, metavar='BOOL')
+@click.option('--cond', help='Train conditional model based on dataset labels [default: false]', type=bool,
+              metavar='BOOL')
 @click.option('--subset', help='Train with only N images [default: all]', type=int, metavar='INT')
 @click.option('--mirror', help='Enable dataset x-flips [default: false]', type=bool, metavar='BOOL')
-
 # Metrics.
 @click.option('--metrics', help='Comma-separated list or "none" [default: fid50k_full]', type=CommaSeparatedList())
-@click.option('--metricdata', help='Dataset to evaluate metrics against (directory or zip) [default: same as training data]', metavar='PATH')
-
+@click.option('--metricdata',
+              help='Dataset to evaluate metrics against (directory or zip) [default: same as training data]',
+              metavar='PATH')
 # Base config.
-@click.option('--cfg', help='Base config [default: auto]', type=click.Choice(['auto', 'stylegan2', 'paper256', 'paper512', 'paper1024', 'cifar']))
+@click.option('--cfg', help='Base config [default: auto]',
+              type=click.Choice(['auto', 'stylegan2', 'paper256', 'paper512', 'paper1024', 'cifar']))
 @click.option('--gamma', help='Override R1 gamma', type=float)
 @click.option('--kimg', help='Override training duration', type=int, metavar='INT')
 @click.option('--batch', help='Override batch size', type=int, metavar='INT')
-
 # Discriminator augmentation.
 @click.option('--aug', help='Augmentation mode [default: apa]', type=click.Choice(['noaug', 'apa', 'fixed']))
 @click.option('--p', help='Augmentation probability for --aug=fixed', type=float)
 @click.option('--target', help='APA target value for --aug=apa', type=float)
-@click.option('--augpipe', help='Augmentation pipeline [default: bgc]', type=click.Choice(['blit', 'geom', 'color', 'filter', 'noise', 'cutout', 'bg', 'bgc', 'bgcf', 'bgcfn', 'bgcfnc']))
-@click.option('--with-dataaug', help='Enable standard data augmentations for the discriminator inputs [default: false]', type=bool, metavar='BOOL')
-
+@click.option('--augpipe', help='Augmentation pipeline [default: bgc]', type=click.Choice(
+    ['blit', 'geom', 'color', 'filter', 'noise', 'cutout', 'bg', 'bgc', 'bgcf', 'bgcfn', 'bgcfnc']))
+@click.option('--with-dataaug', help='Enable standard data augmentations for the discriminator inputs [default: false]',
+              type=bool, metavar='BOOL')
 # Transfer learning.
 @click.option('--resume', help='Resume training [default: noresume]', metavar='PKL')
 @click.option('--freezed', help='Freeze-D [default: 0 layers]', type=int, metavar='INT')
-
 # Performance options.
 @click.option('--fp32', help='Disable mixed-precision training', type=bool, metavar='BOOL')
 @click.option('--nhwc', help='Use NHWC memory format with FP16', type=bool, metavar='BOOL')
 @click.option('--nobench', help='Disable cuDNN benchmarking', type=bool, metavar='BOOL')
 @click.option('--allow-tf32', help='Allow PyTorch to use TF32 internally', type=bool, metavar='BOOL')
 @click.option('--workers', help='Override number of DataLoader workers', type=int, metavar='INT')
-
 def main(ctx, outdir, dry_run, **config_kwargs):
     """Train a GAN using the techniques described in the paper
     "Deceive D: Adaptive Pseudo Augmentation for GAN Training with Limited Data".
@@ -536,6 +624,11 @@ def main(ctx, outdir, dry_run, **config_kwargs):
     args.run_dir = os.path.join(outdir, f'{cur_run_id:05d}-{run_desc}')
     assert not os.path.exists(args.run_dir)
 
+    if args.use_tpu:
+        args.num_gpus = 8
+        print("importing torch_xla...")
+        import torch_xla
+
     # Print options.
     print()
     print('Training options:')
@@ -545,6 +638,7 @@ def main(ctx, outdir, dry_run, **config_kwargs):
     print(f'Training data:      {args.training_set_kwargs.path}')
     print(f'Training duration:  {args.total_kimg} kimg')
     print(f'Number of GPUs:     {args.num_gpus}')
+    print(f'Using TPU:          {args.use_tpu}')
     print(f'Number of images:   {args.training_set_kwargs.max_size}')
     print(f'Image resolution:   {args.training_set_kwargs.resolution}')
     print(f'Conditional model:  {args.training_set_kwargs.use_labels}')
@@ -566,14 +660,17 @@ def main(ctx, outdir, dry_run, **config_kwargs):
     print('Launching processes...')
     torch.multiprocessing.set_start_method('spawn')
     with tempfile.TemporaryDirectory() as temp_dir:
-        if args.num_gpus == 1:
+        if args.use_tpu:
+            prepare_tpu_run(args)
+        elif args.num_gpus == 1:
             subprocess_fn(rank=0, args=args, temp_dir=temp_dir)
         else:
             torch.multiprocessing.spawn(fn=subprocess_fn, args=(args, temp_dir), nprocs=args.num_gpus)
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    main() # pylint: disable=no-value-for-parameter
+    main()  # pylint: disable=no-value-for-parameter
 
-#----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
