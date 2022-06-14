@@ -181,10 +181,15 @@ class StyleGAN2Loss(Loss):
 
             loss_Dr1 = 0
             if do_Dr1:
-                with torch.autograd.profiler.record_function('r1_grads'), conv2d_gradfix.no_weight_gradients():
+                if running_xla:
                     r1_grads = \
                         torch.autograd.grad(outputs=[real_logits.sum()], inputs=[real_img_tmp], create_graph=True,
                                             only_inputs=True)[0]
+                else:
+                    with torch.autograd.profiler.record_function('r1_grads'), conv2d_gradfix.no_weight_gradients():
+                        r1_grads = \
+                            torch.autograd.grad(outputs=[real_logits.sum()], inputs=[real_img_tmp], create_graph=True,
+                                                only_inputs=True)[0]
                 r1_penalty = r1_grads.square().sum([1, 2, 3])
                 loss_Dr1 = r1_penalty * (self.r1_gamma / 2)
                 if not running_xla:
