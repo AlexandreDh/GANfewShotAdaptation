@@ -468,7 +468,7 @@ def subprocess_fn(rank, args, temp_dir):
             misc.copy_params_and_buffers(resume_data[name], module, require_all=False)
 
     # Execute training loop.
-    training_loop.training_loop(G, D, G_ema, rank=rank, **args)
+    training_loop.training_loop(G=G, D=D, G_ema=G_ema, rank=rank, **args)
 
 
 # ----------------------------------------------------------------------------
@@ -476,7 +476,7 @@ def subprocess_fn(rank, args, temp_dir):
 def subprocess_tpu_fn(rank, args):
     dnnlib.util.Logger(file_name=os.path.join(args.run_dir, 'log.txt'), file_mode='a', should_flush=True)
 
-    training_loop.training_loop(args.G, args.D, args.G_ema, rank=rank, running_xla=True, **args)
+    training_loop.training_loop(rank=rank, running_xla=True, **args)
 
 
 def prepare_tpu_run(args):

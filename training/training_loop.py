@@ -89,9 +89,9 @@ def save_image_grid(img, fname, drange, grid_size):
 # ----------------------------------------------------------------------------
 
 def training_loop(
-        G,
-        D,
-        G_ema,
+        G = None,
+        D = None,
+        G_ema = None,
         augment_pipe = None,
         rank=0,  # Rank of the current process in [0, num_devices[.
         run_dir='.',  # Output directory.
@@ -130,6 +130,8 @@ def training_loop(
         running_xla=False,  # The function is running on an XLA device
         **kwargs,
 ):
+
+    assert not G is None and not D is None and not G_ema is None
     # Importing torch_xla
     if running_xla:
         try:
