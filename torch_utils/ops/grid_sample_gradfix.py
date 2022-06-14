@@ -34,7 +34,7 @@ def grid_sample(input, grid):
 def _should_use_custom_op(input):
     if not enabled:
         return False
-    if input.device.type == 'xla':
+    if input.device.type != 'cuda':
         return False
     if any(torch.__version__.startswith(x) for x in ['1.7.', '1.8.', '1.9', '1.10', '1.11']):
         return True
