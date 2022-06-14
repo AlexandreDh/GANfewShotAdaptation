@@ -192,7 +192,7 @@ def training_loop(
         z = torch.empty([batch_gpu, G.z_dim], device=device)
         c = torch.empty([batch_gpu, G.c_dim], device=device)
         img = misc.print_module_summary(G, [z, c], print=print_fun)
-        print_fun(img.cpu().numpy().shape)
+        print_fun(img.shape)
         misc.print_module_summary(D, [img, c], print=print_fun)
 
     # Setup augmentation.
