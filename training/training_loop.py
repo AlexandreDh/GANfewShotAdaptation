@@ -128,6 +128,7 @@ def training_loop(
         # Callback function for determining whether to abort training. Must return consistent results across ranks.
         progress_fn=None,  # Callback function for updating training progress. Called for all ranks.
         running_xla=False,  # The function is running on an XLA device
+        **kwargs,
 ):
     # Importing torch_xla
     if running_xla:
