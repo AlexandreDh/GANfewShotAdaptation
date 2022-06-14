@@ -444,8 +444,8 @@ def subprocess_fn(rank, args, temp_dir):
         print('Constructing networks...')
 
     device = torch.device('cuda', rank)
-    common_kwargs = dict(c_dim=args.training_set_kwargs.label_dim, img_resolution=args.training_set_kwargs.resolution,
-                         img_channels=args.training_set_kwargs.num_channels)
+    common_kwargs = dict(c_dim=0, img_resolution=args.training_set_kwargs.resolution,
+                         img_channels=3)
     G = dnnlib.util.construct_class_by_name(**args.G_kwargs, **common_kwargs).train().requires_grad_(False).to(
         device)  # subclass of torch.nn.Module
     D = dnnlib.util.construct_class_by_name(**args.D_kwargs, **common_kwargs).train().requires_grad_(False).to(
@@ -484,8 +484,8 @@ def prepare_tpu_run(args):
 
     print('Constructing networks...')
 
-    common_kwargs = dict(c_dim=args.training_set_kwargs.label_dim, img_resolution=args.training_set_kwargs.resolution,
-                         img_channels=args.training_set_kwargs.num_channels)
+    common_kwargs = dict(c_dim=0, img_resolution=args.training_set_kwargs.resolution,
+                         img_channels=3)
     G_cpu = dnnlib.util.construct_class_by_name(**args.G_kwargs, **common_kwargs).train().requires_grad_(False)
     D_cpu = dnnlib.util.construct_class_by_name(**args.D_kwargs, **common_kwargs).train().requires_grad_(False)
     G_ema_cpu = copy.deepcopy(G_cpu).eval()
