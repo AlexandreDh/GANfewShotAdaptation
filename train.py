@@ -39,7 +39,7 @@ def setup_training_loop_kwargs(
         gpus=None,  # Number of GPUs: <int>, default = 1 gpu
         snap=None,  # Snapshot interval: <int>, default = 50 ticks
         seed=None,  # Random seed: <int>, default = 0
-
+        use_tpu=False,
         # Dataset.
         data=None,  # Training dataset (required): <path>
         cond=None,  # Train conditional model based on dataset labels: <bool>, default = False
