@@ -25,14 +25,16 @@ enabled = False  # Enable the custom op by setting this to true.
 #----------------------------------------------------------------------------
 
 def grid_sample(input, grid):
-    if _should_use_custom_op():
+    if _should_use_custom_op(input):
         return _GridSample2dForward.apply(input, grid)
     return torch.nn.functional.grid_sample(input=input, grid=grid, mode='bilinear', padding_mode='zeros', align_corners=False)
 
 #----------------------------------------------------------------------------
 
-def _should_use_custom_op():
+def _should_use_custom_op(input):
     if not enabled:
+        return False
+    if input.device.type == 'xla':
         return False
     if any(torch.__version__.startswith(x) for x in ['1.7.', '1.8.', '1.9', '1.10', '1.11']):
         return True
