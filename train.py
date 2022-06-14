@@ -78,6 +78,8 @@ def setup_training_loop_kwargs(
 ):
     args = dnnlib.EasyDict()
 
+    args.use_tpu = use_tpu
+
     # ------------------------------------------
     # General options: gpus, snap, seed
     # ------------------------------------------
