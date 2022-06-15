@@ -285,7 +285,9 @@ def training_loop(
     tick_start_time = time.time()
     maintenance_time = tick_start_time - start_time
     batch_idx = 0
-    tracker = xm.RateTracker()
+    tracker = None
+    if running_xla:
+        tracker = xm.RateTracker()
     if progress_fn is not None:
         progress_fn(0, total_kimg)
 
@@ -372,7 +374,8 @@ def training_loop(
 
         # Update state.
         cur_nimg += batch_size
-        tracker.add(batch_size)
+        if not tracker is None:
+            tracker.add(batch_size)
         batch_idx += 1
 
         # Execute APA heuristic.
