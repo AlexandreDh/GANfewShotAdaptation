@@ -157,7 +157,6 @@ def training_loop(
         torch.backends.cuda.matmul.allow_tf32 = allow_tf32  # Allow PyTorch to internally use tf32 for matmul
         torch.backends.cudnn.allow_tf32 = allow_tf32  # Allow PyTorch to internally use tf32 for convolutions
         conv2d_gradfix.enabled = True  # Improves training speed.
-        grid_sample_gradfix.enabled = True  # Avoids errors with the augmentation pipe.
     else:
         G = G.to(device)
         D = D.to(device)
@@ -165,6 +164,7 @@ def training_loop(
         if not augment_pipe is None:
             augment_pipe = augment_pipe.to(device)
 
+    grid_sample_gradfix.enabled = True  # Avoids errors with the augmentation pipe.
 
 
     # Load training set.
