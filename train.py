@@ -359,8 +359,10 @@ def setup_training_loop_kwargs(
     assert resume is None or isinstance(resume, str)
     if resume is None:
         resume = 'noresume'
+        args.resume_pkl = None
     elif resume == 'noresume':
         desc += '-noresume'
+        args.resume_pkl = None
     elif resume in resume_specs:
         desc += f'-resume{resume}'
         args.resume_pkl = resume_specs[resume]  # predefined url
