@@ -291,13 +291,18 @@ def training_loop(
 
     def data_fetch():
         phase_real_img, phase_real_c = next(training_set_iterator)
-        phase_real_img = (phase_real_img.to(device).to(torch.float32) / 127.5 - 1).split(batch_gpu)
-        phase_real_c = phase_real_c.to(device).split(batch_gpu)
+        phase_real_img = (phase_real_img.to(device).to(torch.float32) / 127.5 - 1).split(batch_gpu) if not running_xla else (phase_real_img.to(torch.float32) / 127.5 - 1).split(batch_gpu)
+        phase_real_c = phase_real_c.to(device).split(batch_gpu) if not running_xla else phase_real_c.split(batch_gpu)
         all_gen_z = torch.randn([len(phases) * batch_size, G.z_dim], device=device)
         all_gen_z = [phase_gen_z.split(batch_gpu) for phase_gen_z in all_gen_z.split(batch_size)]
-        all_gen_c = [training_set.get_label(np.random.randint(len(training_set))) for _ in
-                     range(len(phases) * batch_size)]
-        all_gen_c = torch.from_numpy(np.stack(all_gen_c)).pin_memory().to(device)
+
+        if not running_xla:
+            all_gen_c = [training_set.get_label(np.random.randint(len(training_set))) for _ in
+                         range(len(phases) * batch_size)]
+            all_gen_c = torch.from_numpy(np.stack(all_gen_c)).pin_memory().to(device)
+        else:
+            all_gen_c = torch.zeros([len(phases) * batch_size, 1], device=device)
+
         all_gen_c = [phase_gen_c.split(batch_gpu) for phase_gen_c in all_gen_c.split(batch_size)]
 
         return phase_real_img, phase_real_c, all_gen_z, all_gen_c
@@ -443,7 +448,7 @@ def training_loop(
                 if module is not None:
                     if running_xla and xm.is_master_ordinal():
                         module = copy.deepcopy(module).eval().requires_grad_(False).cpu()
-                    else:
+                    elif not running_xla:
                         if num_gpus > 1:
                             misc.check_ddp_consistency(module, ignore_regex=r'.*\.w_avg')
                         module = copy.deepcopy(module).eval().requires_grad_(False).cpu()
