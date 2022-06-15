@@ -222,7 +222,7 @@ def training_loop(
     # Setup training phases.
     if rank == 0:
         print_fun('Setting up training phases...')
-    loss = dnnlib.util.construct_class_by_name(device=device, with_dataaug=with_dataaug, **ddp_modules,
+    loss = dnnlib.util.construct_class_by_name(device=device, with_dataaug=with_dataaug, running_xla=running_xla, **ddp_modules,
                                                **loss_kwargs)  # subclass of training.loss.Loss
     phases = []
     for name, module, opt_kwargs, reg_interval in [('G', G, G_opt_kwargs, G_reg_interval),
@@ -340,7 +340,7 @@ def training_loop(
                 sync = (round_idx == batch_size // (batch_gpu * num_gpus) - 1)
                 gain = phase.interval
                 loss.accumulate_gradients(phase=phase.name, real_img=real_img, real_c=real_c, gen_z=gen_z, gen_c=gen_c,
-                                          sync=sync, gain=gain, running_xla=running_xla)
+                                          sync=sync, gain=gain)
 
             # Update weights.
             phase.module.requires_grad_(False)
@@ -444,7 +444,7 @@ def training_loop(
         # Save network snapshot.
         snapshot_pkl = None
         snapshot_data = None
-        if (network_snapshot_ticks is not None) and (done or cur_tick % network_snapshot_ticks == 0):
+        if not running_xla and (network_snapshot_ticks is not None) and (done or cur_tick % network_snapshot_ticks == 0):
             if not running_xla:
                 snapshot_data = dict(training_set_kwargs=dict(training_set_kwargs))
 

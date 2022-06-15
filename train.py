@@ -502,6 +502,7 @@ def prepare_tpu_run(args):
             resume_data = legacy.load_network_pkl(f)
         for name, module in [('G', G_cpu), ('D', D_cpu), ('G_ema', G_ema_cpu)]:
             misc.copy_params_and_buffers(resume_data[name], module, require_all=False)
+        print("Done")
 
     args.G = xmp.MpModelWrapper(G_cpu)
     args.D = xmp.MpModelWrapper(D_cpu)
