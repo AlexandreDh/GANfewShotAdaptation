@@ -201,7 +201,7 @@ def training_loop(
         print_fun('Setting up augmentation...')
 
     apa_stats = None
-    if (augment_kwargs is not None) and (augment_p > 0 or apa_target is not None):
+    if augment_pipe is not None and (augment_kwargs is not None) and (augment_p > 0 or apa_target is not None):
         augment_pipe.p.copy_(torch.as_tensor(augment_p))
         if apa_target is not None and not running_xla:
             apa_stats = training_stats.Collector(regex='Loss/signs/real')
@@ -263,11 +263,11 @@ def training_loop(
     # Initialize logs.
     if rank == 0:
         print_fun('Initializing logs...')
-    stats_collector = training_stats.Collector(regex='.*')
+    stats_collector = training_stats.Collector(regex='.*') if not running_xla else None
     stats_metrics = dict()
     stats_jsonl = None
     stats_tfevents = None
-    if rank == 0:
+    if rank == 0 and not running_xla:
         stats_jsonl = open(os.path.join(run_dir, 'stats.jsonl'), 'wt')
         try:
             import torch.utils.tensorboard as tensorboard
@@ -461,6 +461,9 @@ def training_loop(
                     pickle.dump(snapshot_data, f)
 
         # Evaluate metrics.
+        if (snapshot_data is not None) and len(metrics) > 0 and rank == 0 and running_xla:
+            print_fun("should evaluate metrics")
+
         if not running_xla and (snapshot_data is not None) and (len(metrics) > 0):
             if rank == 0:
                 print_fun('Evaluating metrics...')

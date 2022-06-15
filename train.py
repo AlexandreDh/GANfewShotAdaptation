@@ -275,6 +275,7 @@ def setup_training_loop_kwargs(
 
     if aug == 'apa':
         args.apa_target = 0.6
+        args.augment_p = 0
 
     elif aug == 'noaug':
         pass
@@ -489,7 +490,10 @@ def prepare_tpu_run(args):
     G_cpu = dnnlib.util.construct_class_by_name(**args.G_kwargs, **common_kwargs).train().requires_grad_(False)
     D_cpu = dnnlib.util.construct_class_by_name(**args.D_kwargs, **common_kwargs).train().requires_grad_(False)
     G_ema_cpu = copy.deepcopy(G_cpu).eval()
-    augment_pipe = dnnlib.util.construct_class_by_name(**args.augment_kwargs).train().requires_grad_(False)
+
+    if (args.augment_kwargs is not None) and (args.augment_p > 0 or args.apa_target is not None):
+        augment_pipe = dnnlib.util.construct_class_by_name(**args.augment_kwargs).train().requires_grad_(False)
+        args.augment_pipe = xmp.MpModelWrapper(augment_pipe)
 
     # Resume from existing pickle.
     if args.resume_pkl is not None:
@@ -502,7 +506,7 @@ def prepare_tpu_run(args):
     args.G = xmp.MpModelWrapper(G_cpu)
     args.D = xmp.MpModelWrapper(D_cpu)
     args.G_ema = xmp.MpModelWrapper(G_ema_cpu)
-    args.augment_pipe = xmp.MpModelWrapper(augment_pipe)
+
 
     xmp.spawn(subprocess_tpu_fn, args=(args,), nprocs=args.num_gpus,
               start_method='fork')
