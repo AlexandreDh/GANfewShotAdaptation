@@ -445,23 +445,25 @@ def training_loop(
         snapshot_pkl = None
         snapshot_data = None
         if (network_snapshot_ticks is not None) and (done or cur_tick % network_snapshot_ticks == 0):
-            snapshot_data = dict(training_set_kwargs=dict(training_set_kwargs))
+            if not running_xla:
+                snapshot_data = dict(training_set_kwargs=dict(training_set_kwargs))
 
-            for name, module in [('G', G), ('D', D), ('G_ema', G_ema), ('augment_pipe', augment_pipe)]:
-                if module is not None:
-                    if running_xla and xm.is_master_ordinal():
-                        module = copy.deepcopy(module).eval().requires_grad_(False).cpu()
-                    elif not running_xla:
+                for name, module in [('G', G), ('D', D), ('G_ema', G_ema), ('augment_pipe', augment_pipe)]:
+                    if module is not None:
                         if num_gpus > 1:
                             misc.check_ddp_consistency(module, ignore_regex=r'.*\.w_avg')
                         module = copy.deepcopy(module).eval().requires_grad_(False).cpu()
-                snapshot_data[name] = module
-                if not running_xla or xm.is_master_ordinal():
+                    snapshot_data[name] = module
                     del module  # conserve memory
-            snapshot_pkl = os.path.join(run_dir, f'network-snapshot-{cur_nimg // 1000:06d}.pkl')
-            if (not running_xla and rank == 0) or (running_xla and xm.is_master_ordinal()):
-                with open(snapshot_pkl, 'wb') as f:
-                    pickle.dump(snapshot_data, f)
+                snapshot_pkl = os.path.join(run_dir, f'network-snapshot-{cur_nimg // 1000:06d}.pkl')
+                if (not running_xla and rank == 0) or (running_xla and xm.is_master_ordinal()):
+                    with open(snapshot_pkl, 'wb') as f:
+                        pickle.dump(snapshot_data, f)
+            else:
+                for name, module in [('G', G), ('D', D), ('G_ema', G_ema), ('augment_pipe', augment_pipe)]:
+                    if module is not None:
+                        snapshot_name = os.path.join(run_dir, f'{name}-snapshot-{cur_nimg // 1000:06d}.pth')
+                        xm.save(module.state_dict(), snapshot_name)
 
         # Evaluate metrics.
         if (snapshot_data is not None) and len(metrics) > 0 and rank == 0 and running_xla:
