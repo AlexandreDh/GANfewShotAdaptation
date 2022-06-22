@@ -180,7 +180,7 @@ def training_loop(
     if not running_xla:
         training_set_iterator = iter(train_loader)
     else:
-        training_set_iterator = iter(pl.ParallelLoader(train_loader, [device]).per_device_loader(device))
+        training_set_iterator = iter(pl.MpDeviceLoader(train_loader, device))
     if rank == 0 or running_xla:
         print_fun()
         print_fun('Num images: ', len(training_set))
