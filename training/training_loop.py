@@ -180,8 +180,8 @@ def training_loop(
     if not running_xla:
         training_set_iterator = iter(train_loader)
     else:
-        training_set_iterator = iter(pl.MpDeviceLoader(train_loader, device))
-    if rank == 0:
+        training_set_iterator = iter(pl.ParallelLoader(train_loader, [device]).per_device_loader(device))
+    if rank == 0 or running_xla:
         print_fun()
         print_fun('Num images: ', len(training_set))
         print_fun('Image shape:', training_set.image_shape)
@@ -189,7 +189,7 @@ def training_loop(
         print_fun()
 
     # print_fun network summary tables.
-    if rank == 0:
+    if rank == 0 or running_xla:
         z = torch.empty([batch_gpu, G.z_dim], device=device)
         c = torch.empty([batch_gpu, G.c_dim], device=device)
         img = misc.print_module_summary(G, [z, c], print=print_fun)
@@ -197,7 +197,7 @@ def training_loop(
         misc.print_module_summary(D, [img, c], print=print_fun)
 
     # Setup augmentation.
-    if rank == 0:
+    if rank == 0 or running_xla:
         print_fun('Setting up augmentation...')
 
     apa_stats = None
@@ -207,7 +207,7 @@ def training_loop(
             apa_stats = training_stats.Collector(regex='Loss/signs/real')
 
     # Distribute across GPUs.
-    if rank == 0:
+    if rank == 0 or running_xla:
         print_fun(f'Distributing across {num_gpus} GPUs...')
     ddp_modules = dict()
     for name, module in [('G_mapping', G.mapping), ('G_synthesis', G.synthesis), ('D', D), (None, G_ema),
@@ -220,7 +220,7 @@ def training_loop(
             ddp_modules[name] = module
 
     # Setup training phases.
-    if rank == 0:
+    if rank == 0 or running_xla:
         print_fun('Setting up training phases...')
     loss = dnnlib.util.construct_class_by_name(device=device, with_dataaug=with_dataaug, running_xla=running_xla, **ddp_modules,
                                                **loss_kwargs)  # subclass of training.loss.Loss
@@ -251,8 +251,10 @@ def training_loop(
     grid_size = None
     grid_z = None
     grid_c = None
-    if rank == 0:
+    if rank == 0 or running_xla:
         print_fun('Exporting sample images...')
+
+    if rank == 0:
         grid_size, images, labels = setup_snapshot_image_grid(training_set=training_set)
         save_image_grid(images, os.path.join(run_dir, 'reals.png'), drange=[0, 255], grid_size=grid_size)
         grid_z = torch.randn([labels.shape[0], G.z_dim], device=device).split(batch_gpu)
@@ -261,7 +263,7 @@ def training_loop(
         save_image_grid(images, os.path.join(run_dir, 'fakes_init.png'), drange=[-1, 1], grid_size=grid_size)
 
     # Initialize logs.
-    if rank == 0:
+    if rank == 0 or running_xla:
         print_fun('Initializing logs...')
     stats_collector = training_stats.Collector(regex='.*') if not running_xla else None
     stats_metrics = dict()
@@ -276,7 +278,7 @@ def training_loop(
             print_fun('Skipping tfevents export:', err)
 
     # Train.
-    if rank == 0:
+    if rank == 0 or running_xla:
         print_fun(f'Training for {total_kimg} kimg...')
         print_fun()
     cur_nimg = 0
@@ -293,7 +295,7 @@ def training_loop(
 
     def data_fetch():
         phase_real_img, phase_real_c = next(training_set_iterator)
-        phase_real_img = (phase_real_img.to(device).to(torch.float32) / 127.5 - 1).split(batch_gpu) if not running_xla else (phase_real_img.to(torch.float32) / 127.5 - 1).split(batch_gpu)
+        phase_real_img = (phase_real_img.to(device).to(torch.float32) / 127.5 - 1).split(batch_gpu)
         phase_real_c = phase_real_c.to(device).split(batch_gpu) if not running_xla else phase_real_c.split(batch_gpu)
         all_gen_z = torch.randn([len(phases) * batch_size, G.z_dim], device=device)
         all_gen_z = [phase_gen_z.split(batch_gpu) for phase_gen_z in all_gen_z.split(batch_size)]
@@ -308,6 +310,16 @@ def training_loop(
         all_gen_c = [phase_gen_c.split(batch_gpu) for phase_gen_c in all_gen_c.split(batch_size)]
 
         return phase_real_img, phase_real_c, all_gen_z, all_gen_c
+
+    def update_G_ema():
+        ema_nimg = ema_kimg * 1000
+        if ema_rampup is not None:
+            ema_nimg = min(ema_nimg, cur_nimg * ema_rampup)
+        ema_beta = 0.5 ** (batch_size / max(ema_nimg, 1e-8))
+        for p_ema, p in zip(G_ema.parameters(), G.parameters()):
+            p_ema.copy_(p.lerp(p_ema, ema_beta))
+        for b_ema, b in zip(G_ema.buffers(), G.buffers()):
+            b_ema.copy_(b)
 
     while True:
 
@@ -355,15 +367,6 @@ def training_loop(
                 if phase.end_event is not None:
                     phase.end_event.record(torch.cuda.current_stream(device))
 
-        def update_G_ema():
-            ema_nimg = ema_kimg * 1000
-            if ema_rampup is not None:
-                ema_nimg = min(ema_nimg, cur_nimg * ema_rampup)
-            ema_beta = 0.5 ** (batch_size / max(ema_nimg, 1e-8))
-            for p_ema, p in zip(G_ema.parameters(), G.parameters()):
-                p_ema.copy_(p.lerp(p_ema, ema_beta))
-            for b_ema, b in zip(G_ema.buffers(), G.buffers()):
-                b_ema.copy_(b)
 
         # Update G_ema.
         if running_xla:
@@ -411,7 +414,7 @@ def training_loop(
                 f"augment {training_stats.report0('Progress/augment', float(augment_pipe.p.cpu()) if augment_pipe is not None else 0):.3f}"]
             training_stats.report0('Timing/total_hours', (tick_end_time - start_time) / (60 * 60))
             training_stats.report0('Timing/total_days', (tick_end_time - start_time) / (24 * 60 * 60))
-        elif rank == 0:
+        else:
             fields += [f"rate: {tracker.global_rate():.2f}"]
             fields += [f"tick {cur_tick:<5d}"]
             fields += [f"kimg {cur_nimg / 1e3:<8.1f}"]
@@ -425,13 +428,13 @@ def training_loop(
             fields += [
                 f"augment {float(augment_pipe.p.cpu()) if augment_pipe is not None else 0:.3f}"]
 
-        if rank == 0:
+        if rank == 0 or running_xla:
             print_fun(' '.join(fields))
 
         # Check for abort.
         if (not done) and (abort_fn is not None) and abort_fn():
             done = True
-            if rank == 0:
+            if rank == 0 or running_xla:
                 print_fun()
                 print_fun('Aborting...')
 
@@ -466,7 +469,7 @@ def training_loop(
                         xm.save(module.state_dict(), snapshot_name)
 
         # Evaluate metrics.
-        if (snapshot_data is not None) and len(metrics) > 0 and rank == 0 and running_xla:
+        if (snapshot_data is not None) and len(metrics) > 0 and running_xla:
             print_fun("should evaluate metrics")
 
         if not running_xla and (snapshot_data is not None) and (len(metrics) > 0):
@@ -519,7 +522,7 @@ def training_loop(
             break
 
     # Done.
-    if rank == 0:
+    if rank == 0 or running_xla:
         print_fun()
         print_fun('Exiting...')
 
