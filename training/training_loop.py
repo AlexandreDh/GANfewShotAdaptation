@@ -459,7 +459,6 @@ def adaptation_loop(
     D_kwargs                = {},       # Options for discriminator network.
     G_opt_kwargs            = {},       # Options for generator optimizer.
     D_opt_kwargs            = {},       # Options for discriminator optimizer.
-    n_train                 = 10,       # Number of training images
     loss_kwargs             = {},       # Options for loss function.
     metrics                 = [],       # Metrics to evaluate during training.
     metric_dataset_kwargs   = {},       # Options for metric dataset.
@@ -503,6 +502,8 @@ def adaptation_loop(
     training_set = dnnlib.util.construct_class_by_name(**training_set_kwargs) # subclass of training.dataset.Dataset
     training_set_sampler = misc.InfiniteSampler(dataset=training_set, rank=rank, num_replicas=num_gpus, seed=random_seed)
     training_set_iterator = iter(torch.utils.data.DataLoader(dataset=training_set, sampler=training_set_sampler, batch_size=batch_size//num_gpus, **data_loader_kwargs))
+    n_train = len(training_set)
+
     if rank == 0:
         print()
         print('Num images: ', len(training_set))
@@ -527,7 +528,7 @@ def adaptation_loop(
         print(f'Resuming from "{resume_pkl}"')
         with dnnlib.util.open_url(resume_pkl) as f:
             resume_data = legacy.load_network_pkl(f)
-        for name, module in [('G', G), ('G_source', G_source), ('D', D), ("D_source", D_source), ('G_ema', G_ema), ("Extra", Extra)]:
+        for name, module in [('G', G), ('G_source', G_source), ('D', D), ('G_ema', G_ema), ("Extra", Extra)]:
             if resume_data[name]:
                 misc.copy_params_and_buffers(resume_data[name], module, require_all=False)
             elif name == "G_source" and resume_data["G"]:
