@@ -36,6 +36,11 @@ def setup_training_loop_kwargs(
     gpus         = None, # Number of GPUs: <int>, default = 1 gpu
     snap         = None, # Snapshot interval: <int>, default = 50 ticks
     seed         = None, # Random seed: <int>, default = 0
+    adaptation   = None, # running few shot adaptation
+
+    # Few shot adapation options
+    feat_const_batch = None,
+    kl_weight = None,
 
     # Dataset.
     data         = None, # Training dataset (required): <path>
@@ -96,6 +101,11 @@ def setup_training_loop_kwargs(
         seed = 0
     assert isinstance(seed, int)
     args.random_seed = seed
+
+    args.adaptation = False
+    if not adaptation is None:
+        args.adaptation = True
+
 
     # -----------------------------------
     # Dataset: data, cond, subset, mirror
@@ -190,7 +200,7 @@ def setup_training_loop_kwargs(
         desc += f'{gpus:d}'
         spec.ref_gpus = gpus
         res = args.training_set_kwargs.resolution
-        spec.mb = max(min(gpus * min(4096 // res, 32), 64), gpus) # keep gpu memory consumption at bay
+        spec.mb = max(min(gpus * min(4096 // res, 32), 256), gpus) # keep gpu memory consumption at bay
         spec.mbstd = min(spec.mb // gpus, 4) # other hyperparams behave more predictably if mbstd group size remains fixed
         spec.fmaps = 1 if res >= 512 else 0.5
         spec.lrate = 0.002 if res >= 1024 else 0.0025
@@ -198,7 +208,9 @@ def setup_training_loop_kwargs(
         spec.ema = spec.mb * 10 / 32
 
     args.G_kwargs = dnnlib.EasyDict(class_name='training.networks.Generator', z_dim=512, w_dim=512, mapping_kwargs=dnnlib.EasyDict(), synthesis_kwargs=dnnlib.EasyDict())
-    args.D_kwargs = dnnlib.EasyDict(class_name='training.networks.Discriminator', block_kwargs=dnnlib.EasyDict(), mapping_kwargs=dnnlib.EasyDict(), epilogue_kwargs=dnnlib.EasyDict())
+
+    D_class = 'training.networks.Discriminator' if not args.adaptation else 'training.networks.PatchDiscriminator'
+    args.D_kwargs = dnnlib.EasyDict(class_name=D_class, block_kwargs=dnnlib.EasyDict(), mapping_kwargs=dnnlib.EasyDict(), epilogue_kwargs=dnnlib.EasyDict())
     args.G_kwargs.synthesis_kwargs.channel_base = args.D_kwargs.channel_base = int(spec.fmaps * 32768)
     args.G_kwargs.synthesis_kwargs.channel_max = args.D_kwargs.channel_max = 512
     args.G_kwargs.mapping_kwargs.num_layers = spec.map
@@ -208,7 +220,15 @@ def setup_training_loop_kwargs(
 
     args.G_opt_kwargs = dnnlib.EasyDict(class_name='torch.optim.Adam', lr=spec.lrate, betas=[0,0.99], eps=1e-8)
     args.D_opt_kwargs = dnnlib.EasyDict(class_name='torch.optim.Adam', lr=spec.lrate, betas=[0,0.99], eps=1e-8)
-    args.loss_kwargs = dnnlib.EasyDict(class_name='training.loss.StyleGAN2Loss', r1_gamma=spec.gamma)
+
+    loss_class = 'training.loss.StyleGAN2Loss' if not args.adaptation else 'training.loss.FewShotAdaptationLoss'
+    args.loss_kwargs = dnnlib.EasyDict(class_name=loss_class, r1_gamma=spec.gamma)
+
+    if args.adaptation:
+        if kl_weight is not None:
+            args.loss_kwargs.kl_weight = kl_weight
+        if feat_const_batch is not None:
+            args.loss_kwargs.feat_const_batch = feat_const_batch
 
     args.total_kimg = spec.kimg
     args.batch_size = spec.mb
@@ -413,7 +433,10 @@ def subprocess_fn(rank, args, temp_dir):
         custom_ops.verbosity = 'none'
 
     # Execute training loop.
-    training_loop.training_loop(rank=rank, **args)
+    if not args.adaptation:
+        training_loop.training_loop(rank=rank, **args)
+    else:
+        training_loop.adaptation_loop(rank=rank, **args)
 
 #----------------------------------------------------------------------------
 
@@ -437,6 +460,9 @@ class CommaSeparatedList(click.ParamType):
 @click.option('--snap', help='Snapshot interval [default: 50 ticks]', type=int, metavar='INT')
 @click.option('--seed', help='Random seed [default: 0]', type=int, metavar='INT')
 @click.option('-n', '--dry-run', help='Print training options and exit', is_flag=True)
+@click.option('--adaptation', help='Adapt GAN using few shot adaptation', is_flag=True)
+@click.option('--feat_const_batch', help='number of element to compute disance consistency loss [default: 4]', type=int, metavar='INT')
+@click.option('--kl_weight', help='Weight for kl consistency loss [default: 1000]', type=float)
 
 # Dataset.
 @click.option('--data', help='Training data (directory or zip)', metavar='PATH', required=True)
@@ -472,7 +498,7 @@ class CommaSeparatedList(click.ParamType):
 @click.option('--allow-tf32', help='Allow PyTorch to use TF32 internally', type=bool, metavar='BOOL')
 @click.option('--workers', help='Override number of DataLoader workers', type=int, metavar='INT')
 
-def main(ctx, outdir, dry_run, **config_kwargs):
+def main(ctx, outdir, dry_run, adaptation, **config_kwargs):
     """Train a GAN using the techniques described in the paper
     "Deceive D: Adaptive Pseudo Augmentation for GAN Training with Limited Data".
     The code is heavily borrowed from the paper
@@ -522,7 +548,7 @@ def main(ctx, outdir, dry_run, **config_kwargs):
 
     # Setup training options.
     try:
-        run_desc, args = setup_training_loop_kwargs(**config_kwargs)
+        run_desc, args = setup_training_loop_kwargs(adaptation=adaptation, **config_kwargs)
     except UserError as err:
         ctx.fail(err)
 

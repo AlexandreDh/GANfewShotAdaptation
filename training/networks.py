@@ -394,7 +394,7 @@ class SynthesisBlock(torch.nn.Module):
             self.skip = Conv2dLayer(in_channels, out_channels, kernel_size=1, bias=False, up=2,
                                     resample_filter=resample_filter, channels_last=self.channels_last)
 
-    def forward(self, x, img, ws, force_fp32=False, fused_modconv=None, **layer_kwargs):
+    def forward(self, x, img, ws, return_feats=False, force_fp32=False, fused_modconv=None, **layer_kwargs):
         misc.assert_shape(ws, [None, self.num_conv + self.num_torgb, self.w_dim])
         w_iter = iter(ws.unbind(dim=1))
         dtype = torch.float16 if self.use_fp16 and not force_fp32 else torch.float32
@@ -403,6 +403,7 @@ class SynthesisBlock(torch.nn.Module):
             with misc.suppress_tracer_warnings():  # this value will be treated as a constant
                 fused_modconv = (not self.training) and (dtype == torch.float32 or int(x.shape[0]) == 1)
 
+        feat_list = []
         # Input.
         if self.in_channels == 0:
             x = self.const.to(dtype=dtype, memory_format=memory_format)
@@ -414,14 +415,19 @@ class SynthesisBlock(torch.nn.Module):
         # Main layers.
         if self.in_channels == 0:
             x = self.conv1(x, next(w_iter), fused_modconv=fused_modconv, **layer_kwargs)
+            feat_list.append(x)
         elif self.architecture == 'resnet':
             y = self.skip(x, gain=np.sqrt(0.5))
             x = self.conv0(x, next(w_iter), fused_modconv=fused_modconv, **layer_kwargs)
+            feat_list.append(x)
             x = self.conv1(x, next(w_iter), fused_modconv=fused_modconv, gain=np.sqrt(0.5), **layer_kwargs)
+            feat_list.append(x)
             x = y.add_(x)
         else:
             x = self.conv0(x, next(w_iter), fused_modconv=fused_modconv, **layer_kwargs)
+            feat_list.append(x)
             x = self.conv1(x, next(w_iter), fused_modconv=fused_modconv, **layer_kwargs)
+            feat_list.append(x)
 
         # ToRGB.
         if img is not None:
@@ -434,7 +440,7 @@ class SynthesisBlock(torch.nn.Module):
 
         assert x.dtype == dtype
         assert img is None or img.dtype == torch.float32
-        return x, img
+        return x, img, feat_list
 
 
 # ----------------------------------------------------------------------------
@@ -455,6 +461,7 @@ class SynthesisNetwork(torch.nn.Module):
         self.w_dim = w_dim
         self.img_resolution = img_resolution
         self.img_resolution_log2 = int(np.log2(img_resolution))
+        self.n_latent = self.img_resolution_log2 * 2 - 2 # number of block convolution (ie excluding to_rgb conv)
         self.img_channels = img_channels
         self.block_resolutions = [2 ** i for i in range(2, self.img_resolution_log2 + 1)]
         channels_dict = {res: min(channel_base // res, channel_max) for res in self.block_resolutions}
@@ -473,7 +480,7 @@ class SynthesisNetwork(torch.nn.Module):
                 self.num_ws += block.num_torgb
             setattr(self, f'b{res}', block)
 
-    def forward(self, ws, **block_kwargs):
+    def forward(self, ws, return_feats=False, **block_kwargs):
         block_ws = []
         with torch.autograd.profiler.record_function('split_ws'):
             misc.assert_shape(ws, [None, self.num_ws, self.w_dim])
@@ -484,11 +491,17 @@ class SynthesisNetwork(torch.nn.Module):
                 block_ws.append(ws.narrow(1, w_idx, block.num_conv + block.num_torgb))
                 w_idx += block.num_conv
 
+        feat_list = []
         x = img = None
         for res, cur_ws in zip(self.block_resolutions, block_ws):
             block = getattr(self, f'b{res}')
-            x, img = block(x, img, cur_ws, **block_kwargs)
-        return img
+            x, img, feats = block(x, img, cur_ws, return_feats=return_feats, **block_kwargs)
+            feat_list += feats
+
+        if return_feats:
+            return img, feat_list
+
+        return img, None
 
 
 # ----------------------------------------------------------------------------
@@ -517,7 +530,8 @@ class Generator(torch.nn.Module):
 
     def forward(self, z, c, truncation_psi=1, truncation_cutoff=None, **synthesis_kwargs):
         ws = self.mapping(z, c, truncation_psi=truncation_psi, truncation_cutoff=truncation_cutoff)
-        img = self.synthesis(ws, **synthesis_kwargs)
+        img, _ = self.synthesis(ws, **synthesis_kwargs)
+
         return img
 
 
@@ -814,7 +828,7 @@ class PatchDiscriminator(torch.nn.Module):
         self.b4 = DiscriminatorEpilogue(channels_dict[4], cmap_dim=cmap_dim, resolution=4, **epilogue_kwargs,
                                         **common_kwargs)
 
-    def forward(self, img, c, extra = None, flag = None, p_ind = None, **block_kwargs):
+    def forward(self, img, c, extra=None, flag=None, p_ind=None, **block_kwargs):
         x = None
 
         feat = []

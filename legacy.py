@@ -38,6 +38,7 @@ def load_network_pkl(f, force_fp16=False):
     assert isinstance(data['G'], torch.nn.Module)
     assert isinstance(data['D'], torch.nn.Module)
     assert isinstance(data['G_ema'], torch.nn.Module)
+    assert isinstance(data['Extra'], torch.nn.Module)
     assert isinstance(data['training_set_kwargs'], (dict, type(None)))
     assert isinstance(data['augment_pipe'], (torch.nn.Module, type(None)))
 
