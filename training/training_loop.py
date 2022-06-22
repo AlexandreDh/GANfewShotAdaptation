@@ -254,7 +254,7 @@ def training_loop(
     if rank == 0 or running_xla:
         print_fun('Exporting sample images...')
 
-    if rank == 0 and not running_xla:
+    if rank == 0:
         grid_size, images, labels = setup_snapshot_image_grid(training_set=training_set)
         save_image_grid(images, os.path.join(run_dir, 'reals.png'), drange=[0, 255], grid_size=grid_size)
         grid_z = torch.randn([labels.shape[0], G.z_dim], device=device).split(batch_gpu)
