@@ -838,13 +838,13 @@ class PatchDiscriminator(torch.nn.Module):
                 x, img = block(x, img, **block_kwargs)
             else:
                 temp1 = block.conv0(x)
-                if (flag > 0) and (temp1.shape[1] == 512) and (temp1.shape[2] == 32 or temp1.shape[2] == 16):
+                if flag is not None and (flag > 0) and (temp1.shape[1] == 512) and (temp1.shape[2] == 32 or temp1.shape[2] == 16):
                     feat.append(temp1)
                 temp2 = block.conv1(temp1)
-                if (flag > 0) and (temp2.shape[1] == 512) and (temp2.shape[2] == 32 or temp2.shape[2] == 16):
+                if flag is not None and (flag > 0) and (temp2.shape[1] == 512) and (temp2.shape[2] == 32 or temp2.shape[2] == 16):
                     feat.append(temp2)
                 x, img = block(x, img, **block_kwargs)
-                if (flag > 0) and len(feat) == 4:
+                if p_ind is not None and extra is not None and flag is not None and (flag > 0) and len(feat) == 4:
                     # We use 4 possible intermediate feature maps to be used for patch-based adversarial loss. Any one of them is selected randomly during training.
                     x = extra(feat[p_ind], p_ind)
                     return x
