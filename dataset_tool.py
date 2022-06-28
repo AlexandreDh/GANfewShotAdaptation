@@ -423,6 +423,9 @@ def convert_dataset(
         idx_str = f'{idx:08d}'
         archive_fname = f'{idx_str[:5]}/img{idx_str}.png'
 
+        # Remove alpha channel
+        if img.shape[2] == 4:
+            img = img[:, :, :3]
         # Apply crop and resize.
         img = transform_image(image['img'])
 
