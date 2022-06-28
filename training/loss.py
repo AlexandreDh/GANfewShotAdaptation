@@ -181,7 +181,7 @@ class FewShotAdaptationLoss(Loss):
 
         self.sfm = torch.nn.Softmax(dim=1)
         self.sim = torch.nn.CosineSimilarity()
-        self.kl_loss = torch.nn.KLDivLoss()
+        self.kl_loss = torch.nn.KLDivLoss(reduction='batchmean')
 
     def run_G(self, z, c, sync, is_subspace, use_source=False, return_feats=False):
 
@@ -282,7 +282,7 @@ class FewShotAdaptationLoss(Loss):
 
                 rel_loss = self.kl_weight * self.kl_loss(torch.log(dist_target), dist_src)  # distance consistency loss
             with torch.autograd.profiler.record_function('Gmain_backward'):
-                (loss_Gmain.mean() + rel_loss.batchmean()).mul(gain).backward()
+                (loss_Gmain + rel_loss).mean().mul(gain).backward()
 
         # Gpl: Apply path length regularization.
         if do_Gpl:
