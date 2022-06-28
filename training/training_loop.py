@@ -530,7 +530,7 @@ def adaptation_loop(
         with dnnlib.util.open_url(resume_pkl) as f:
             resume_data = legacy.load_network_pkl(f)
         for name, module in [('G', G), ('G_source', G_source), ('D', D), ('G_ema', G_ema), ("Extra", Extra)]:
-            if resume_data[name]:
+            if name in resume_data and resume_data[name]:
                 misc.copy_params_and_buffers(resume_data[name], module, require_all=False)
             elif name == "G_source" and resume_data["G"]:
                 misc.copy_params_and_buffers(resume_data["G"], module, require_all=False)
@@ -733,7 +733,7 @@ def adaptation_loop(
         snapshot_data = None
         if (network_snapshot_ticks is not None) and (done or cur_tick % network_snapshot_ticks == 0):
             snapshot_data = dict(training_set_kwargs=dict(training_set_kwargs))
-            for name, module in [('G', G), ('D', D), ('G_ema', G_ema), ('Extra', Extra)]:
+            for name, module in [('G', G), ('D', D), ('G_source', G_source), ('G_ema', G_ema), ('Extra', Extra)]:
                 if module is not None:
                     if num_gpus > 1:
                         misc.check_ddp_consistency(module, ignore_regex=r'.*\.w_avg')
