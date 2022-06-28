@@ -569,7 +569,7 @@ def adaptation_loop(
 
         if reg_interval is None:
             opt = dnnlib.util.construct_class_by_name(params=params, **opt_kwargs) # subclass of torch.optim.Optimizer
-            phases += [dnnlib.EasyDict(name=name+'both', module=module, opt=opt, interval=1, extra=extra_module)]
+            phases += [dnnlib.EasyDict(name=name+'both', module=module, opt=opt, interval=1, extra_module=extra_module)]
         else: # Lazy regularization.
             mb_ratio = reg_interval / (reg_interval + 1)
             opt_kwargs = dnnlib.EasyDict(opt_kwargs)
@@ -577,8 +577,8 @@ def adaptation_loop(
             opt_kwargs.betas = [beta ** mb_ratio for beta in opt_kwargs.betas]
 
             opt = dnnlib.util.construct_class_by_name(params=params, **opt_kwargs) # subclass of torch.optim.Optimizer
-            phases += [dnnlib.EasyDict(name=name+'main', module=module, opt=opt, interval=1, extra=extra_module)]
-            phases += [dnnlib.EasyDict(name=name+'reg', module=module, opt=opt, interval=reg_interval, extra=extra_module)]
+            phases += [dnnlib.EasyDict(name=name+'main', module=module, opt=opt, interval=1, extra_module=extra_module)]
+            phases += [dnnlib.EasyDict(name=name+'reg', module=module, opt=opt, interval=reg_interval, extra_module=extra_module)]
     for phase in phases:
         phase.start_event = None
         phase.end_event = None
