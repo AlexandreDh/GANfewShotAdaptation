@@ -282,7 +282,7 @@ class FewShotAdaptationLoss(Loss):
 
                 rel_loss = self.kl_weight * self.kl_loss(torch.log(dist_target), dist_src)  # distance consistency loss
             with torch.autograd.profiler.record_function('Gmain_backward'):
-                (loss_Gmain + rel_loss).mean().mul(gain).backward()
+                (loss_Gmain.mean() + rel_loss.batchmean()).mul(gain).backward()
 
         # Gpl: Apply path length regularization.
         if do_Gpl:
