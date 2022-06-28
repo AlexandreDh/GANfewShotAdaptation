@@ -288,7 +288,7 @@ class FewShotAdaptationLoss(Loss):
         if do_Gpl:
             with torch.autograd.profiler.record_function('Gpl_forward'):
                 batch_size = gen_z.shape[0] // self.pl_batch_shrink
-                gen_img, gen_ws, _ = self.run_G(gen_z[:batch_size], gen_c[:batch_size], sync=sync)
+                gen_img, gen_ws, _ = self.run_G(gen_z[:batch_size], gen_c[:batch_size], sync=sync, is_subspace=is_subspace)
                 pl_noise = torch.randn_like(gen_img) / np.sqrt(gen_img.shape[2] * gen_img.shape[3])
                 with torch.autograd.profiler.record_function('pl_grads'), conv2d_gradfix.no_weight_gradients():
                     pl_grads = torch.autograd.grad(outputs=[(gen_img * pl_noise).sum()], inputs=[gen_ws], create_graph=True, only_inputs=True)[0]
