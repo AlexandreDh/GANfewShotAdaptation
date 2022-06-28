@@ -521,7 +521,7 @@ def adaptation_loop(
     G_source = dnnlib.util.construct_class_by_name(**G_kwargs, **common_kwargs).requires_grad_(False).to(device) # subclass of torch.nn.Module
     G = dnnlib.util.construct_class_by_name(**G_kwargs, **common_kwargs).train().requires_grad_(False).to(device) # subclass of torch.nn.Module
     D = dnnlib.util.construct_class_by_name(**D_kwargs, **common_kwargs).train().requires_grad_(False).to(device) # subclass of torch.nn.Module
-    Extra = dnnlib.util.construct_class_by_name(class_name="training.networks.Extra", **common_kwargs).train().requires_grad_(False).to(device)
+    Extra = dnnlib.util.construct_class_by_name(class_name="training.networks.Extra").train().requires_grad_(False).to(device)
     G_ema = copy.deepcopy(G).eval()
 
     # Resume from existing pickle.
