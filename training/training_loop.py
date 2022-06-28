@@ -484,6 +484,7 @@ def adaptation_loop(
     subspace_interval       = 4,        # How often to draw sample noise from the anchor region
     subspace_std            = 0.1,      # Std when drawing sample noise around anchor region
     adaptation              = True,
+    **kwargs
 ):
     # Initialize.
     start_time = time.time()
