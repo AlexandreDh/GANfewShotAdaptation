@@ -103,7 +103,7 @@ def setup_training_loop_kwargs(
     args.random_seed = seed
 
     args.adaptation = False
-    if not adaptation is None:
+    if not adaptation is None and adaptation:
         args.adaptation = True
 
 
