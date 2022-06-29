@@ -460,6 +460,7 @@ def adaptation_loop(
     G_opt_kwargs            = {},       # Options for generator optimizer.
     D_opt_kwargs            = {},       # Options for discriminator optimizer.
     loss_kwargs             = {},       # Options for loss function.
+    augment_kwargs          = None,     # Options for augmentation pipeline. None = disable.
     metrics                 = [],       # Metrics to evaluate during training.
     metric_dataset_kwargs   = {},       # Options for metric dataset.
     random_seed             = 0,        # Global random seed.
@@ -471,6 +472,10 @@ def adaptation_loop(
     ema_rampup              = None,     # EMA ramp-up coefficient.
     G_reg_interval          = 4,        # How often to perform regularization for G? None = disable lazy regularization.
     D_reg_interval          = 16,       # How often to perform regularization for D? None = disable lazy regularization.
+    augment_p               = 0,        # Initial value of augmentation probability.
+    apa_target              = None,     # APA target value. None = fixed p.
+    apa_interval            = 4,        # How often to perform APA adjustment?
+    apa_kimg                = 500,      # APA adjustment speed, measured in how many kimg it takes for p to increase/decrease by one unit.
     with_dataaug            = False,    # Enable standard data augmentations for the discriminator inputs? Usually improve further thanks to the compatibility.
     total_kimg              = 25000,    # Total length of the training, measured in thousands of real images.
     kimg_per_tick           = 4,        # Progress snapshot interval.
@@ -483,7 +488,6 @@ def adaptation_loop(
     progress_fn             = None,     # Callback function for updating training progress. Called for all ranks.
     subspace_interval       = 4,        # How often to draw sample noise from the anchor region
     subspace_std            = 0.1,      # Std when drawing sample noise around anchor region
-    adaptation              = True,
     **kwargs
 ):
     # Initialize.
@@ -542,8 +546,17 @@ def adaptation_loop(
         img = misc.print_module_summary(G, [z, c])
         misc.print_module_summary(D, [img, c])
 
-    # Setup augmentation.
-    augment_pipe = None
+        # Setup augmentation.
+        if rank == 0:
+            print('Setting up augmentation...')
+        augment_pipe = None
+        apa_stats = None
+        if (augment_kwargs is not None) and (augment_p > 0 or apa_target is not None):
+            augment_pipe = dnnlib.util.construct_class_by_name(**augment_kwargs).train().requires_grad_(False).to(
+                device)  # subclass of torch.nn.Module
+            augment_pipe.p.copy_(torch.as_tensor(augment_p))
+            if apa_target is not None:
+                apa_stats = training_stats.Collector(regex='Loss/signs/real')
 
     # Distribute across GPUs.
     if rank == 0:
@@ -692,6 +705,13 @@ def adaptation_loop(
         # Update state.
         cur_nimg += batch_size
         batch_idx += 1
+
+        # Execute APA heuristic.
+        if (apa_stats is not None) and (batch_idx % apa_interval == 0):
+            apa_stats.update()
+            adjust = np.sign(apa_stats['Loss/signs/real'] - apa_target) * (batch_size * apa_interval) / (
+                        apa_kimg * 1000)
+            augment_pipe.p.copy_((augment_pipe.p + adjust).max(misc.constant(0, device=device)))
 
         # Perform maintenance tasks once per tick.
         done = (cur_nimg >= total_kimg * 1000)
