@@ -799,8 +799,6 @@ class PatchDiscriminator(torch.nn.Module):
         super().__init__()
         self.c_dim = c_dim
         self.img_resolution = img_resolution
-        self.img_res_div_8 = img_resolution // 8
-        self.img_res_div_16 = img_resolution // 16
         self.img_resolution_log2 = int(np.log2(img_resolution))
         self.img_channels = img_channels
         self.block_resolutions = [2 ** i for i in range(self.img_resolution_log2, 2, -1)]
@@ -840,10 +838,10 @@ class PatchDiscriminator(torch.nn.Module):
                 x, img = block(x, img, **block_kwargs)
             else:
                 temp1 = block.conv0(x)
-                if flag is not None and (flag > 0) and (temp1.shape[1] == 512) and (temp1.shape[2] == self.img_res_div_8 or temp1.shape[2] == self.img_res_div_16):
+                if flag is not None and (flag > 0) and (temp1.shape[1] == 512) and (temp1.shape[2] == 32 or temp1.shape[2] == 16):
                     feat.append(temp1)
                 temp2 = block.conv1(temp1)
-                if flag is not None and (flag > 0) and (temp2.shape[1] == 512) and (temp2.shape[2] == self.img_res_div_8 or temp2.shape[2] == self.img_res_div_16):
+                if flag is not None and (flag > 0) and (temp2.shape[1] == 512) and (temp2.shape[2] == 32 or temp2.shape[2] == 16):
                     feat.append(temp2)
                 x, img = block(x, img, **block_kwargs)
                 if p_ind is not None and extra is not None and flag is not None and (flag > 0) and len(feat) == 4:
