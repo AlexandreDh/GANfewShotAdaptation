@@ -66,7 +66,7 @@ def setup_training_loop_kwargs(
     aug          = None, # Augmentation mode: 'apa' (default), 'noaug', 'fixed'
     p            = None, # Specify p for 'fixed' (required): <float>
     target       = None, # Override APA target for 'apa': <float>, default = depends on aug
-    apa_kimg    = None, # Rate at which the apa probaility can augment from 0 to 1
+    apa_kimg    = None, # Rate at which the apa probability can augment from 0 to 1 in kimg
     augpipe      = None, # Augmentation pipeline: 'blit', 'geom', 'color', 'filter', 'noise', 'cutout', 'bg', 'bgc' (default), ..., 'bgcfnc'
     with_dataaug = None, # Enable standard data augmentations for the discriminator inputs: <bool>, default = False
 
@@ -291,9 +291,6 @@ def setup_training_loop_kwargs(
     if aug == 'apa':
         args.apa_target = 0.6
 
-        if apa_kimg is not None and isinstance(apa_kimg, int):
-            args.apa_kimg = apa_kimg
-
     elif aug == 'noaug':
         pass
 
@@ -384,6 +381,9 @@ def setup_training_loop_kwargs(
     if resume != 'noresume':
         args.apa_kimg = 100 # make APA react faster at the beginning
         args.ema_rampup = None # disable EMA rampup
+
+    if apa_kimg is not None and isinstance(apa_kimg, int):
+        args.apa_kimg = apa_kimg
 
     if freezed is not None:
         assert isinstance(freezed, int)

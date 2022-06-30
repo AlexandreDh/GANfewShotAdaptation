@@ -768,7 +768,7 @@ def adaptation_loop(
                     pickle.dump(snapshot_data, f)
 
         # Evaluate metrics.
-        if  (metrics_ticks is not None) and (done or cur_tick % metrics_ticks == 0) and (len(metrics) > 0):
+        if cur_tick > 0 and metrics_ticks is not None and (done or cur_tick % metrics_ticks == 0) and len(metrics) > 0:
             if rank == 0:
                 print('Evaluating metrics...')
             for metric in metrics:
