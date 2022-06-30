@@ -37,6 +37,7 @@ def setup_training_loop_kwargs(
     snap         = None, # Snapshot interval: <int>, default = 50 ticks
     seed         = None, # Random seed: <int>, default = 0
     adaptation   = None, # running few shot adaptation
+    kimg_per_tick = None,
 
     # Few shot adapation options
     feat_const_batch = None,
@@ -51,17 +52,21 @@ def setup_training_loop_kwargs(
     # Metrics (not included in desc).
     metrics      = None, # List of metric names: [], ['fid50k_full'] (default), ...
     metricdata   = None, # Metric dataset (optional): <path>
+    metrics_ticks = None,
 
     # Base config.
     cfg          = None, # Base config: 'auto' (default), 'stylegan2', 'paper256', 'paper512', 'paper1024', 'cifar'
     gamma        = None, # Override R1 gamma: <float>
     kimg         = None, # Override training duration: <int>
     batch        = None, # Override batch size: <int>
+    image_snapshot_ticks = None,
+    network_snapshot_ticks = None,
 
     # Discriminator augmentation.
     aug          = None, # Augmentation mode: 'apa' (default), 'noaug', 'fixed'
     p            = None, # Specify p for 'fixed' (required): <float>
     target       = None, # Override APA target for 'apa': <float>, default = depends on aug
+    apa_kimg    = None, # Rate at which the apa probaility can augment from 0 to 1
     augpipe      = None, # Augmentation pipeline: 'blit', 'geom', 'color', 'filter', 'noise', 'cutout', 'bg', 'bgc' (default), ..., 'bgcfnc'
     with_dataaug = None, # Enable standard data augmentations for the discriminator inputs: <bool>, default = False
 
@@ -96,6 +101,14 @@ def setup_training_loop_kwargs(
         raise UserError('--snap must be at least 1')
     args.image_snapshot_ticks = snap
     args.network_snapshot_ticks = snap
+    args.metrics_ticks = snap
+
+    if network_snapshot_ticks is not None and isinstance(network_snapshot_ticks, int):
+        args.network_snapshot_ticks = network_snapshot_ticks
+    if image_snapshot_ticks is not None and isinstance(image_snapshot_ticks, int):
+        args.image_snapshot_ticks = image_snapshot_ticks
+    if metrics_ticks is not None and isinstance(metrics_ticks, int):
+        args.metrics_ticks = metrics_ticks
 
     if seed is None:
         seed = 0
@@ -263,6 +276,8 @@ def setup_training_loop_kwargs(
         args.batch_size = batch
         args.batch_gpu = batch // gpus
 
+    if kimg_per_tick is not None and isinstance(kimg_per_tick, float):
+        args.kimg_per_tick = kimg_per_tick
     # ---------------------------------------------------
     # Discriminator augmentation: aug, p, target, augpipe
     # ---------------------------------------------------
@@ -275,6 +290,9 @@ def setup_training_loop_kwargs(
 
     if aug == 'apa':
         args.apa_target = 0.6
+
+        if apa_kimg is not None and isinstance(apa_kimg, int):
+            args.apa_kimg = apa_kimg
 
     elif aug == 'noaug':
         pass
@@ -463,6 +481,9 @@ class CommaSeparatedList(click.ParamType):
 @click.option('--adaptation', help='Adapt GAN using few shot adaptation', is_flag=True)
 @click.option('--feat_const_batch', help='number of element to compute disance consistency loss [default: 4]', type=int, metavar='INT')
 @click.option('--kl_weight', help='Weight for kl consistency loss [default: 1000]', type=float)
+@click.option('--metrics_ticks', help='Interval at which metrics is computed', type=int, metavar='INT')
+@click.option('--network_snapshot_ticks', help='Interval at which network is snapshot', type=int, metavar='INT')
+@click.option('--image_snapshot_ticks', help='Interval at which image is snapshot', type=int, metavar='INT')
 
 # Dataset.
 @click.option('--data', help='Training data (directory or zip)', metavar='PATH', required=True)
@@ -478,11 +499,13 @@ class CommaSeparatedList(click.ParamType):
 @click.option('--cfg', help='Base config [default: auto]', type=click.Choice(['auto', 'stylegan2', 'paper256', 'paper512', 'paper1024', 'cifar']))
 @click.option('--gamma', help='Override R1 gamma', type=float)
 @click.option('--kimg', help='Override training duration', type=int, metavar='INT')
+@click.option('--kimg_per_ticks', help='Override ticks duration', type=float)
 @click.option('--batch', help='Override batch size', type=int, metavar='INT')
 
 # Discriminator augmentation.
 @click.option('--aug', help='Augmentation mode [default: apa]', type=click.Choice(['noaug', 'apa', 'fixed']))
 @click.option('--p', help='Augmentation probability for --aug=fixed', type=float)
+@click.option('--apa_kimg', help='Apa kimg', type=int, metavar='INT')
 @click.option('--target', help='APA target value for --aug=apa', type=float)
 @click.option('--augpipe', help='Augmentation pipeline [default: bgc]', type=click.Choice(['blit', 'geom', 'color', 'filter', 'noise', 'cutout', 'bg', 'bgc', 'bgcf', 'bgcfn', 'bgcfnc']))
 @click.option('--with-dataaug', help='Enable standard data augmentations for the discriminator inputs [default: false]', type=bool, metavar='BOOL')
