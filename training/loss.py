@@ -182,7 +182,7 @@ class FewShotAdaptationLoss(Loss):
 
         self.sfm = torch.nn.Softmax(dim=1)
         self.sim = torch.nn.CosineSimilarity()
-        self.kl_loss = torch.nn.KLDivLoss(mean="batchmean")
+        self.kl_loss = torch.nn.KLDivLoss(reduction="none")
 
     def run_G(self, z, c, sync, is_subspace, use_source=False, return_feats=False):
 
