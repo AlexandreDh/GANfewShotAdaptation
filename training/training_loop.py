@@ -443,13 +443,12 @@ def mixing_noise(batch, latent_dim, prob, device):
 
 
 def get_subspace(batch_size, init_z, subspace_std, n_sample=32, vis_flag=False):
-    std = subspace_std
     bs = batch_size if not vis_flag else n_sample
     ind = np.random.randint(0, init_z.size(0), size=bs)
     z = init_z[ind]  # should give a tensor of size [batch_size, 512]
     for i in range(z.size(0)):
         for j in range(z.size(1)):
-            z[i][j].data.normal_(z[i][j], std)
+            z[i][j].data.normal_(z[i][j], subspace_std)
     return z
 
 def adaptation_loop(
@@ -578,22 +577,24 @@ def adaptation_loop(
     loss = dnnlib.util.construct_class_by_name(device=device, with_dataaug=with_dataaug, **ddp_modules, **loss_kwargs) # subclass of training.loss.Loss
     phases = []
     for name, module, opt_kwargs, reg_interval, extra_module in [('G', G, G_opt_kwargs, G_reg_interval, None), ('D', D, D_opt_kwargs, D_reg_interval, Extra)]:
-        params = module.parameters()
-        if extra_module is not None:
-            params = list(params) + list(extra_module.parameters())
+        extra_opt = None
 
         if reg_interval is None:
-            opt = dnnlib.util.construct_class_by_name(params=params, **opt_kwargs) # subclass of torch.optim.Optimizer
-            phases += [dnnlib.EasyDict(name=name+'both', module=module, opt=opt, interval=1, extra_module=extra_module)]
+            opt = dnnlib.util.construct_class_by_name(params=module.parameters(), **opt_kwargs) # subclass of torch.optim.Optimizer
+            if extra_module is not None:
+                extra_opt = dnnlib.util.construct_class_by_name(params=extra_module.parameters(), **opt_kwargs) # subclass of torch.optim.Optimizer
+            phases += [dnnlib.EasyDict(name=name+'both', module=module, opt=opt, interval=1, extra_module=extra_module, extra_opt=extra_opt)]
         else: # Lazy regularization.
             mb_ratio = reg_interval / (reg_interval + 1)
             opt_kwargs = dnnlib.EasyDict(opt_kwargs)
             opt_kwargs.lr = opt_kwargs.lr * mb_ratio
             opt_kwargs.betas = [beta ** mb_ratio for beta in opt_kwargs.betas]
 
-            opt = dnnlib.util.construct_class_by_name(params=params, **opt_kwargs) # subclass of torch.optim.Optimizer
-            phases += [dnnlib.EasyDict(name=name+'main', module=module, opt=opt, interval=1, extra_module=extra_module)]
-            phases += [dnnlib.EasyDict(name=name+'reg', module=module, opt=opt, interval=reg_interval, extra_module=extra_module)]
+            opt = dnnlib.util.construct_class_by_name(params=module.parameters(), **opt_kwargs) # subclass of torch.optim.Optimizer
+            if extra_module is not None:
+                extra_opt = dnnlib.util.construct_class_by_name(params=extra_module.parameters(), **opt_kwargs) # subclass of torch.optim.Optimizer
+            phases += [dnnlib.EasyDict(name=name+'main', module=module, opt=opt, interval=1, extra_module=extra_module, extra_opt=extra_opt)]
+            phases += [dnnlib.EasyDict(name=name+'reg', module=module, opt=opt, interval=reg_interval, extra_module=extra_module, extra_opt=extra_opt)]
     for phase in phases:
         phase.start_event = None
         phase.end_event = None
@@ -690,6 +691,8 @@ def adaptation_loop(
                     if param.grad is not None:
                         misc.nan_to_num(param.grad, nan=0, posinf=1e5, neginf=-1e5, out=param.grad)
                 phase.opt.step()
+                if phase.extra_opt is not None:
+                    phase.extra_opt.step()
             if phase.end_event is not None:
                 phase.end_event.record(torch.cuda.current_stream(device))
 

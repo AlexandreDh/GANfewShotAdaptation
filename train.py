@@ -42,6 +42,7 @@ def setup_training_loop_kwargs(
     # Few shot adapation options
     feat_const_batch = None,
     kl_weight = None,
+    high_p = 1,
 
     # Dataset.
     data         = None, # Training dataset (required): <path>
@@ -242,6 +243,7 @@ def setup_training_loop_kwargs(
             args.loss_kwargs.kl_weight = kl_weight
         if feat_const_batch is not None:
             args.loss_kwargs.feat_const_batch = feat_const_batch
+        args.loss_kwargs.high_p = high_p
 
     args.total_kimg = spec.kimg
     args.batch_size = spec.mb
@@ -481,6 +483,7 @@ class CommaSeparatedList(click.ParamType):
 @click.option('--adaptation', help='Adapt GAN using few shot adaptation', is_flag=True)
 @click.option('--feat_const_batch', help='number of element to compute disance consistency loss [default: 4]', type=int, metavar='INT')
 @click.option('--kl_weight', help='Weight for kl consistency loss [default: 1000]', type=float)
+@click.option('--high_p', help='Number of layers to use for Patch Discriminator [default: 1]', type=int, metavar="INT")
 @click.option('--metrics_ticks', help='Interval at which metrics is computed', type=int, metavar='INT')
 @click.option('--network_snapshot_ticks', help='Interval at which network is snapshot', type=int, metavar='INT')
 @click.option('--image_snapshot_ticks', help='Interval at which image is snapshot', type=int, metavar='INT')

@@ -158,7 +158,7 @@ class StyleGAN2Loss(Loss):
 class FewShotAdaptationLoss(Loss):
     def __init__(self, device, G_mapping, G_synthesis, D, Extra, G_mapping_src, G_synthesis_src, augment_pipe=None,
                  style_mixing_prob=0.9, r1_gamma=10, pl_batch_shrink=2, pl_decay=0.01, pl_weight=2, feat_const_batch=4,
-                 kl_weight=1000, with_dataaug=False):
+                 kl_weight=1000, high_p=1, with_dataaug=False):
         super().__init__()
         self.device = device
         self.G_mapping = G_mapping
@@ -176,18 +176,19 @@ class FewShotAdaptationLoss(Loss):
         self.pl_mean = torch.zeros([], device=device)
         self.feat_const_batch = feat_const_batch
         self.kl_weight = kl_weight
+        self.high_p = max(min(high_p, 4), 1)
         self.with_dataaug = with_dataaug
         self.pseudo_data = None
 
         self.sfm = torch.nn.Softmax(dim=1)
         self.sim = torch.nn.CosineSimilarity()
-        self.kl_loss = torch.nn.KLDivLoss(reduction='batchmean')
+        self.kl_loss = torch.nn.KLDivLoss()
 
     def run_G(self, z, c, sync, is_subspace, use_source=False, return_feats=False):
 
         mapping = self.G_mapping if not use_source else self.G_mapping_src
         synthesis = self.G_synthesis if not use_source else self.G_synthesis_src
-        with misc.ddp_sync(self.G_mapping, sync):
+        with misc.ddp_sync(mapping, sync):
             ws = mapping(z, c)
             if self.style_mixing_prob > 0 and is_subspace > 0:
                 with torch.autograd.profiler.record_function('style_mixing'):
@@ -199,7 +200,7 @@ class FewShotAdaptationLoss(Loss):
         return img, ws, feats
 
     def run_D(self, img, c, sync, is_subspace):
-        p_ind = np.random.randint(0, 4)
+        p_ind = np.random.randint(0, self.high_p)
         # Enable standard data augmentations when --with-dataaug=True
         if self.with_dataaug and self.augment_pipe is not None:
             img = self.augment_pipe(img)
@@ -240,7 +241,7 @@ class FewShotAdaptationLoss(Loss):
             # Distance consitency loss
             with torch.autograd.profiler.record_function("Gmain_dist_forward"):
                 with torch.set_grad_enabled(False):
-                    z = torch.randn([self.feat_const_batch, self.G_mapping.z_dim], device=gen_z.device)
+                    z = torch.randn([self.feat_const_batch, self.G_mapping_src.z_dim], device=gen_z.device)
                     c = torch.zeros_like(z)
                     feat_ind = np.random.randint(1, self.G_synthesis_src.n_latent - 1, size=self.feat_const_batch)
 
@@ -258,10 +259,9 @@ class FewShotAdaptationLoss(Loss):
                                     feat_src[feat_ind[pair1]][pair1].reshape(-1), 0)
                                 compare_feat = torch.unsqueeze(
                                     feat_src[feat_ind[pair1]][pair2].reshape(-1), 0)
-                                dist_src[pair1, tmpc] = self.sim(
-                                    anchor_feat, compare_feat)
+                                dist_src[pair1, tmpc] = self.sim(anchor_feat, compare_feat)
                                 tmpc += 1
-                    dist_source = self.sfm(dist_src)
+                    dist_src = self.sfm(dist_src)
 
                 # computing distances among target generations
                 _, _, feat_target = self.run_G(z, c, sync=False, is_subspace=0, return_feats=True)

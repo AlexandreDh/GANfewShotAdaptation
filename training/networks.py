@@ -394,7 +394,7 @@ class SynthesisBlock(torch.nn.Module):
             self.skip = Conv2dLayer(in_channels, out_channels, kernel_size=1, bias=False, up=2,
                                     resample_filter=resample_filter, channels_last=self.channels_last)
 
-    def forward(self, x, img, ws, return_feats=False, force_fp32=False, fused_modconv=None, **layer_kwargs):
+    def forward(self, x, img, ws, force_fp32=False, fused_modconv=None, **layer_kwargs):
         misc.assert_shape(ws, [None, self.num_conv + self.num_torgb, self.w_dim])
         w_iter = iter(ws.unbind(dim=1))
         dtype = torch.float16 if self.use_fp16 and not force_fp32 else torch.float32
@@ -495,7 +495,7 @@ class SynthesisNetwork(torch.nn.Module):
         x = img = None
         for res, cur_ws in zip(self.block_resolutions, block_ws):
             block = getattr(self, f'b{res}')
-            x, img, feats = block(x, img, cur_ws, return_feats=return_feats, **block_kwargs)
+            x, img, feats = block(x, img, cur_ws, **block_kwargs)
             feat_list += feats
 
         if return_feats:
