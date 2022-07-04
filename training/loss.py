@@ -182,7 +182,7 @@ class FewShotAdaptationLoss(Loss):
 
         self.sfm = torch.nn.Softmax(dim=1)
         self.sim = torch.nn.CosineSimilarity()
-        self.kl_loss = torch.nn.KLDivLoss()
+        self.kl_loss = torch.nn.KLDivLoss(mean="batchmean")
 
     def run_G(self, z, c, sync, is_subspace, use_source=False, return_feats=False):
 
@@ -261,6 +261,7 @@ class FewShotAdaptationLoss(Loss):
                                     feat_src[feat_ind[pair1]][pair2].reshape(-1), 0)
                                 dist_src[pair1, tmpc] = self.sim(anchor_feat, compare_feat)
                                 tmpc += 1
+                    print(dist_src[0].cpu())
                     dist_src = self.sfm(dist_src)
 
                 # computing distances among target generations
@@ -278,9 +279,10 @@ class FewShotAdaptationLoss(Loss):
                                 feat_target[feat_ind[pair1]][pair2].reshape(-1), 0)
                             dist_target[pair1, tmpc] = self.sim(anchor_feat, compare_feat)
                             tmpc += 1
+                print(dist_target[0].cpu())
                 dist_target = self.sfm(dist_target)
 
-                print(dist_target.size())
+
                 print(dist_src.size())
                 print(dist_src[0].cpu())
                 print(dist_target[0].cpu())
