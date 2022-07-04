@@ -281,6 +281,8 @@ class FewShotAdaptationLoss(Loss):
                 dist_target = self.sfm(dist_target)
 
                 rel_loss = self.kl_weight * self.kl_loss(torch.log(dist_target), dist_src)  # distance consistency loss
+                print(rel_loss.size())
+                print(rel_loss.mean().item())
                 training_stats.report('Loss/G/dist_const', rel_loss)
             with torch.autograd.profiler.record_function('Gmain_backward'):
                 (loss_Gmain + rel_loss).mean().mul(gain).backward()

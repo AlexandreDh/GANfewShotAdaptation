@@ -648,7 +648,7 @@ def adaptation_loop(
         progress_fn(0, total_kimg)
     while True:
 
-        subspace_sampling = batch_idx % subspace_interval
+        subspace_sampling = 1#batch_idx % subspace_interval
         # Fetch training data.
         with torch.autograd.profiler.record_function('data_fetch'):
             phase_real_img, phase_real_c = next(training_set_iterator)
@@ -693,6 +693,9 @@ def adaptation_loop(
                         misc.nan_to_num(param.grad, nan=0, posinf=1e5, neginf=-1e5, out=param.grad)
                 phase.opt.step()
                 if phase.extra_opt is not None:
+                    for param in phase.extra_module.parameters():
+                        if param.grad is not None:
+                            misc.nan_to_num(param.grad, nan=0, posinf=1e5, neginf=-1e5, out=param.grad)
                     phase.extra_opt.step()
             if phase.end_event is not None:
                 phase.end_event.record(torch.cuda.current_stream(device))
