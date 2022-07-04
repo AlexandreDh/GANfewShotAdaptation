@@ -259,10 +259,11 @@ class FewShotAdaptationLoss(Loss):
                                     feat_src[feat_ind[pair1]][pair1].reshape(-1), 0)
                                 compare_feat = torch.unsqueeze(
                                     feat_src[feat_ind[pair1]][pair2].reshape(-1), 0)
-                                dist_src[pair1, tmpc] = self.sim(anchor_feat, compare_feat)
+                                dist = self.sim(anchor_feat, compare_feat)
+                                dist_src[pair1, tmpc] = dist
                                 print(anchor_feat)
                                 print(compare_feat)
-                                print(dist_src[pair1, tmpc])
+                                print(dist)
                                 tmpc += 1
                     print(dist_src[0].cpu())
                     dist_src = self.sfm(dist_src)
