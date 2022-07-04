@@ -24,6 +24,10 @@ from metrics import metric_main
 from torch_utils import training_stats
 from torch_utils import custom_ops
 
+import warnings
+
+warnings.filterwarnings("ignore")
+
 #----------------------------------------------------------------------------
 
 class UserError(Exception):
