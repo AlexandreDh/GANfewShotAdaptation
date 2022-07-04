@@ -47,6 +47,7 @@ def setup_training_loop_kwargs(
     feat_const_batch = None,
     kl_weight = None,
     high_p = 1,
+    subspace_interval = None,
 
     # Dataset.
     data         = None, # Training dataset (required): <path>
@@ -123,6 +124,9 @@ def setup_training_loop_kwargs(
     args.adaptation = False
     if not adaptation is None and adaptation:
         args.adaptation = True
+
+    if not subspace_interval is None:
+        args.subspace_interval = subspace_interval
 
 
     # -----------------------------------
@@ -486,6 +490,7 @@ class CommaSeparatedList(click.ParamType):
 @click.option('-n', '--dry-run', help='Print training options and exit', is_flag=True)
 @click.option('--adaptation', help='Adapt GAN using few shot adaptation', is_flag=True)
 @click.option('--feat_const_batch', help='number of element to compute disance consistency loss [default: 4]', type=int, metavar='INT')
+@click.option('--subspace_interval', help='How often to sample in the anchor region [default: 4]', type=int, metavar='INT')
 @click.option('--kl_weight', help='Weight for kl consistency loss [default: 1000]', type=float)
 @click.option('--high_p', help='Number of layers to use for Patch Discriminator [default: 1]', type=int, metavar="INT")
 @click.option('--metrics_ticks', help='Interval at which metrics is computed', type=int, metavar='INT')

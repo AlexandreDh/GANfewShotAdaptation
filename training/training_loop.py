@@ -523,7 +523,7 @@ def adaptation_loop(
     common_kwargs = dict(c_dim=training_set.label_dim, img_resolution=training_set.resolution, img_channels=training_set.num_channels)
 
     D_kwargs.class_name = "training.networks.PatchDiscriminator"
-    G_source = dnnlib.util.construct_class_by_name(**G_kwargs, **common_kwargs).requires_grad_(False).to(device) # subclass of torch.nn.Module
+    G_source = dnnlib.util.construct_class_by_name(**G_kwargs, **common_kwargs).eval().requires_grad_(False).to(device) # subclass of torch.nn.Module
     G = dnnlib.util.construct_class_by_name(**G_kwargs, **common_kwargs).train().requires_grad_(False).to(device) # subclass of torch.nn.Module
     D = dnnlib.util.construct_class_by_name(**D_kwargs, **common_kwargs).train().requires_grad_(False).to(device) # subclass of torch.nn.Module
     Extra = dnnlib.util.construct_class_by_name(class_name="training.networks.Extra").train().requires_grad_(False).to(device)
@@ -563,7 +563,8 @@ def adaptation_loop(
     if rank == 0:
         print(f'Distributing across {num_gpus} GPUs...')
     ddp_modules = dict()
-    for name, module in [('G_mapping', G.mapping), ('G_synthesis', G.synthesis), ('G_mapping_src', G_source.mapping), ('G_synthesis_src', G_source.synthesis), ('D', D), (None, G_ema), ('Extra', Extra)]:
+    for name, module in [('G_mapping', G.mapping), ('G_synthesis', G.synthesis), ('G_mapping_src', G_source.mapping),
+                         ('G_synthesis_src', G_source.synthesis), ('D', D), (None, G_ema), ('Extra', Extra)]:
         if (num_gpus > 1) and (module is not None) and len(list(module.parameters())) != 0:
             module.requires_grad_(True)
             module = torch.nn.parallel.DistributedDataParallel(module, device_ids=[device], broadcast_buffers=False)
