@@ -280,6 +280,11 @@ class FewShotAdaptationLoss(Loss):
                             tmpc += 1
                 dist_target = self.sfm(dist_target)
 
+                print(dist_target.size())
+                print(dist_src.size())
+                print(dist_src[0].cpu())
+                print(dist_target[0].cpu())
+
                 rel_loss = self.kl_weight * self.kl_loss(torch.log(dist_target), dist_src)  # distance consistency loss
                 print(rel_loss.size())
                 print(rel_loss.mean().item())
