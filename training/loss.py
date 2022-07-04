@@ -256,16 +256,11 @@ class FewShotAdaptationLoss(Loss):
                         for pair2 in range(self.feat_const_batch):
                             if pair1 != pair2:
                                 anchor_feat = torch.unsqueeze(
-                                    feat_src[feat_ind[pair1]][pair1].reshape(-1), 0)
+                                    feat_src[feat_ind[pair1]][pair1].reshape(-1), 0).to(torch.float32) # avoid overflow issues with fp16 and cosine similarity
                                 compare_feat = torch.unsqueeze(
-                                    feat_src[feat_ind[pair1]][pair2].reshape(-1), 0)
-                                dist = self.sim(anchor_feat, compare_feat)
-                                dist_src[pair1, tmpc] = dist
-                                print(anchor_feat)
-                                print(compare_feat)
-                                print(dist)
+                                    feat_src[feat_ind[pair1]][pair2].reshape(-1), 0).to(torch.float32)
+                                dist_src[pair1, tmpc] = self.sim(anchor_feat, compare_feat)
                                 tmpc += 1
-                    print(dist_src[0].cpu())
                     dist_src = self.sfm(dist_src)
 
                 # computing distances among target generations
@@ -278,22 +273,14 @@ class FewShotAdaptationLoss(Loss):
                     for pair2 in range(self.feat_const_batch):  # comparing the possible pairs
                         if pair1 != pair2:
                             anchor_feat = torch.unsqueeze(
-                                feat_target[feat_ind[pair1]][pair1].reshape(-1), 0)
+                                feat_target[feat_ind[pair1]][pair1].reshape(-1), 0).to(torch.float32)
                             compare_feat = torch.unsqueeze(
-                                feat_target[feat_ind[pair1]][pair2].reshape(-1), 0)
+                                feat_target[feat_ind[pair1]][pair2].reshape(-1), 0).to(torch.float32)
                             dist_target[pair1, tmpc] = self.sim(anchor_feat, compare_feat)
                             tmpc += 1
-                print(dist_target[0].cpu())
                 dist_target = self.sfm(dist_target)
 
-
-                print(dist_src.size())
-                print(dist_src[0].cpu())
-                print(dist_target[0].cpu())
-
                 rel_loss = self.kl_weight * self.kl_loss(torch.log(dist_target), dist_src)  # distance consistency loss
-                print(rel_loss.size())
-                print(rel_loss.mean().item())
                 training_stats.report('Loss/G/dist_const', rel_loss)
             with torch.autograd.profiler.record_function('Gmain_backward'):
                 (loss_Gmain + rel_loss).mean().mul(gain).backward()
