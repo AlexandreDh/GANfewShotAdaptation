@@ -248,8 +248,6 @@ class FewShotAdaptationLoss(Loss):
                     # computing source distances
                     src_sample, _, feat_src = self.run_G(z, c, sync=False, is_subspace=0, use_source=True, return_feats=True)
                     dist_src = torch.zeros([self.feat_const_batch, self.feat_const_batch - 1], device=gen_z.device)
-                    print(len(feat_src))
-                    print(feat_src[0][0].cpu())
 
                     # iterating over different elements in the batch
                     for pair1 in range(self.feat_const_batch):
@@ -262,6 +260,9 @@ class FewShotAdaptationLoss(Loss):
                                 compare_feat = torch.unsqueeze(
                                     feat_src[feat_ind[pair1]][pair2].reshape(-1), 0)
                                 dist_src[pair1, tmpc] = self.sim(anchor_feat, compare_feat)
+                                print(anchor_feat)
+                                print(compare_feat)
+                                print(dist_src[pair1, tmpc])
                                 tmpc += 1
                     print(dist_src[0].cpu())
                     dist_src = self.sfm(dist_src)
