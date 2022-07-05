@@ -71,6 +71,7 @@ def setup_training_loop_kwargs(
     # Discriminator augmentation.
     aug          = None, # Augmentation mode: 'apa' (default), 'noaug', 'fixed'
     p            = None, # Specify p for 'fixed' (required): <float>
+    max_aug_p    = None,
     target       = None, # Override APA target for 'apa': <float>, default = depends on aug
     apa_kimg    = None, # Rate at which the apa probability can augment from 0 to 1 in kimg
     augpipe      = None, # Augmentation pipeline: 'blit', 'geom', 'color', 'filter', 'noise', 'cutout', 'bg', 'bgc' (default), ..., 'bgcfnc'
@@ -301,6 +302,9 @@ def setup_training_loop_kwargs(
     if aug == 'apa':
         args.apa_target = 0.6
 
+        if max_aug_p is not None:
+            args.max_aug_p = max_aug_p
+
     elif aug == 'noaug':
         pass
 
@@ -517,6 +521,7 @@ class CommaSeparatedList(click.ParamType):
 # Discriminator augmentation.
 @click.option('--aug', help='Augmentation mode [default: apa]', type=click.Choice(['noaug', 'apa', 'fixed']))
 @click.option('--p', help='Augmentation probability for --aug=fixed', type=float)
+@click.option('--max_aug_p', help='Maximum augmentation probability for --aug=apa [default: 0.9}', type=float)
 @click.option('--apa_kimg', help='Apa kimg', type=int, metavar='INT')
 @click.option('--target', help='APA target value for --aug=apa', type=float)
 @click.option('--augpipe', help='Augmentation pipeline [default: bgc]', type=click.Choice(['blit', 'geom', 'color', 'filter', 'noise', 'cutout', 'bg', 'bgc', 'bgcf', 'bgcfn', 'bgcfnc']))

@@ -473,6 +473,7 @@ def adaptation_loop(
     G_reg_interval          = 4,        # How often to perform regularization for G? None = disable lazy regularization.
     D_reg_interval          = 16,       # How often to perform regularization for D? None = disable lazy regularization.
     augment_p               = 0,        # Initial value of augmentation probability.
+    max_aug_p               = 0.9,
     apa_target              = None,     # APA target value. None = fixed p.
     apa_interval            = 4,        # How often to perform APA adjustment?
     apa_kimg                = 500,      # APA adjustment speed, measured in how many kimg it takes for p to increase/decrease by one unit.
@@ -720,7 +721,7 @@ def adaptation_loop(
             apa_stats.update()
             adjust = np.sign(apa_stats['Loss/signs/real'] - apa_target) * (batch_size * apa_interval) / (
                         apa_kimg * 1000)
-            augment_pipe.p.copy_((augment_pipe.p + adjust).clamp_(0., 0.9))
+            augment_pipe.p.copy_((augment_pipe.p + adjust).clamp_(0., max_aug_p))
 
         # Perform maintenance tasks once per tick.
         done = (cur_nimg >= total_kimg * 1000)
