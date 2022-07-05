@@ -720,7 +720,7 @@ def adaptation_loop(
             apa_stats.update()
             adjust = np.sign(apa_stats['Loss/signs/real'] - apa_target) * (batch_size * apa_interval) / (
                         apa_kimg * 1000)
-            augment_pipe.p.copy_((augment_pipe.p + adjust).max(misc.constant(0, device=device)))
+            augment_pipe.p.copy_((augment_pipe.p + adjust).clamp_(0., 0.9))
 
         # Perform maintenance tasks once per tick.
         done = (cur_nimg >= total_kimg * 1000)
