@@ -90,8 +90,8 @@ def generate_style_mix(
 
     print('Saving images...')
     os.makedirs(outdir, exist_ok=True)
-    for (row_seed, col_seed), image in image_dict.items():
-        PIL.Image.fromarray(image, 'RGB').save(f'{outdir}/{row_seed}-{col_seed}.png')
+    # for (row_seed, col_seed), image in image_dict.items():
+    #     PIL.Image.fromarray(image, 'RGB').save(f'{outdir}/{row_seed}-{col_seed}.png')
 
     print('Saving image grid...')
     W = G.img_resolution
