@@ -125,7 +125,7 @@ def generate_images(
         
     
     images = torch.cat(images, dim=0)
-    vutils.save_image(images.cpu(), f'{outdir}/{outname}_seeds{seeds[0]}-{seeds[-1]}.png', nrow=12, padding=0)
+    vsutils.save_image(images.cpu(), f'{outdir}/{outname}_seeds{seeds[0]}-{seeds[-1]}.png', nrow=12, padding=0)
 
 
 #----------------------------------------------------------------------------
