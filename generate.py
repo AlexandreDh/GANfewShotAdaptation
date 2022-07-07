@@ -43,7 +43,8 @@ def num_range(s: str) -> List[int]:
 @click.option('--class', 'class_idx', type=int, help='Class label (unconditional if not specified)')
 @click.option('--noise-mode', help='Noise mode', type=click.Choice(['const', 'random', 'none']), default='const', show_default=True)
 @click.option('--projected-w', help='Projection result file', type=str, metavar='FILE')
-@click.option('--outdir', help='Where to save the output images', type=str, required=True, metavar='DIR')
+@click.option('--outdir', help='Where to save the output image', type=str, required=True, metavar='DIR')
+@click.option('--outname', help='Base name for the output image grid', type=str, required=True, metavar='FILE')
 def generate_images(
     ctx: click.Context,
     network_pkl: str,
@@ -51,6 +52,7 @@ def generate_images(
     truncation_psi: float,
     noise_mode: str,
     outdir: str,
+    outname: str,
     class_idx: Optional[int],
     projected_w: Optional[str]
 ):
