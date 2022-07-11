@@ -12,6 +12,8 @@ import numpy as np
 from numpy.random import default_rng
 
 
+import legacy
+
 def assign_to_cluster_centers(n_samples, outdir, center_folder, network_pkl, seed=42, batch_size=32):
     """
 
