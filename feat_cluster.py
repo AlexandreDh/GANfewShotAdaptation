@@ -57,7 +57,7 @@ def assign_to_cluster_centers(n_samples, outdir, center_folder, network_pkl, see
 
             for idx_img, img in enumerate(images):
                 PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB').save(
-                    os.path.join(generated_dir, f'/{idx * batch_size + idx_img:06d}.png'))
+                    os.path.join(generated_dir, f'{idx * batch_size + idx_img:06d}.png'))
 
         del G, all_z, all_c
         # Calculating LPIPS distances to center
