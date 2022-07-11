@@ -519,7 +519,6 @@ class CommaSeparatedList(click.ParamType):
 @click.option('--snap', help='Snapshot interval [default: 50 ticks]', type=int, metavar='INT')
 @click.option('--seed', help='Random seed [default: 0]', type=int, metavar='INT')
 @click.option('-n', '--dry-run', help='Print training options and exit', is_flag=True)
-@click.option('--adaptation', help='Adapt GAN using few shot adaptation', is_flag=True)
 @click.option('--disable_subspace_sampling', help='Weather to do subspace sampling or not', is_flag=True)
 @click.option('--adaptation', help='GAN Adaptation [default: none]', type=click.Choice(['none', 'CDC', 'DCL']))
 @click.option('--feat_const_batch', help='number of element to compute distance consistency loss [default: 4]',
