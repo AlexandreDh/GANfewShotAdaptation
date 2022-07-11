@@ -250,7 +250,7 @@ class FewShotAdaptationLoss(Loss):
             feat_ind_G = np.random.randint(0, self.G_synthesis_src.n_latent, size=batch_size)
 
             with torch.set_grad_enabled(False):
-                _, _, feat_img_src = self.run_G(gen_z, gen_c, sync=False, use_source=True, return_feats=True)
+                _, _, feat_img_src = self.run_G(gen_z, gen_c, sync=False, is_subspace=0, use_source=True, return_feats=True)
 
             sims = [self.exp_sim(feat_ind_G, idx_anchor, idx, feat_img, feat_img_src) for idx in range(batch_size)]
 
@@ -267,7 +267,7 @@ class FewShotAdaptationLoss(Loss):
             feat_ind_D = np.random.randint(0, self.D.num_feats, size=batch_size)
 
             with torch.set_grad_enabled(False):
-                gen_img_src, _, _ = self.run_G(gen_z, gen_c, sync=False, use_source=True)
+                gen_img_src, _, _ = self.run_G(gen_z, gen_c, sync=False, is_subspace=0, use_source=True)
                 _, feat_img_src = self.run_D(gen_img_src, gen_c, is_subspace=0, sync=False, return_feats=True)
 
             sims_real = [self.exp_sim(feat_ind_D, idx_anchor, idx, feat_img, feat_img_real) for idx in
