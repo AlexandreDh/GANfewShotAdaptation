@@ -102,8 +102,8 @@ class StyleGAN2Loss(Loss):
                 pl_noise = torch.randn_like(gen_img) / np.sqrt(gen_img.shape[2] * gen_img.shape[3])
                 with torch.autograd.profiler.record_function('pl_grads'), conv2d_gradfix.no_weight_gradients():
                     pl_grads = \
-                    torch.autograd.grad(outputs=[(gen_img * pl_noise).sum()], inputs=[gen_ws], create_graph=True,
-                                        only_inputs=True)[0]
+                        torch.autograd.grad(outputs=[(gen_img * pl_noise).sum()], inputs=[gen_ws], create_graph=True,
+                                            only_inputs=True)[0]
                 pl_lengths = pl_grads.square().sum(2).mean(1).sqrt()
                 pl_mean = self.pl_mean.lerp(pl_lengths.mean(), self.pl_decay)
                 self.pl_mean.copy_(pl_mean.detach())
@@ -150,8 +150,8 @@ class StyleGAN2Loss(Loss):
                 if do_Dr1:
                     with torch.autograd.profiler.record_function('r1_grads'), conv2d_gradfix.no_weight_gradients():
                         r1_grads = \
-                        torch.autograd.grad(outputs=[real_logits.sum()], inputs=[real_img_tmp], create_graph=True,
-                                            only_inputs=True)[0]
+                            torch.autograd.grad(outputs=[real_logits.sum()], inputs=[real_img_tmp], create_graph=True,
+                                                only_inputs=True)[0]
                     r1_penalty = r1_grads.square().sum([1, 2, 3])
                     loss_Dr1 = r1_penalty * (self.r1_gamma / 2)
                     training_stats.report('Loss/r1_penalty', r1_penalty)
@@ -167,7 +167,7 @@ class StyleGAN2Loss(Loss):
 class FewShotAdaptationLoss(Loss):
     def __init__(self, device, G_mapping, G_synthesis, D, Extra, G_mapping_src, G_synthesis_src, augment_pipe=None,
                  style_mixing_prob=0.9, r1_gamma=10, pl_batch_shrink=2, pl_decay=0.01, pl_weight=2, feat_const_batch=4,
-                 kl_weight=1000, high_p=1, with_dataaug=False):
+                 kl_weight=1000, high_p=1, cl_G_weight=2, cl_D_weight=0.5, with_dataaug=False):
         super().__init__()
         self.device = device
         self.G_mapping = G_mapping
@@ -186,6 +186,8 @@ class FewShotAdaptationLoss(Loss):
         self.feat_const_batch = feat_const_batch
         self.kl_weight = kl_weight
         self.high_p = max(min(high_p, 4), 1)
+        self.cl_D_weight = cl_G_weight
+        self.cl_D_weight = cl_D_weight
         self.with_dataaug = with_dataaug
         self.pseudo_data = None
 
@@ -209,14 +211,15 @@ class FewShotAdaptationLoss(Loss):
             img, feats = synthesis(ws, return_feats=return_feats)
         return img, ws, feats
 
-    def run_D(self, img, c, sync, is_subspace):
+    def run_D(self, img, c, sync, is_subspace, return_feats=False):
         p_ind = np.random.randint(0, self.high_p)
         # Enable standard data augmentations when --with-dataaug=True
         if self.with_dataaug and self.augment_pipe is not None:
             img = self.augment_pipe(img)
         with misc.ddp_sync(self.D, sync):
-            logits = self.D(img, c, extra=self.Extra, flag=is_subspace, p_ind=p_ind)
-        return logits
+            logits, feats = self.D(img, c, extra=self.Extra, flag=is_subspace, p_ind=p_ind, return_feats=return_feats)
+
+        return logits, feats
 
     def adaptive_pseudo_augmentation(self, real_img):
         # Apply Adaptive Pseudo Augmentation (APA)
@@ -230,9 +233,52 @@ class FewShotAdaptationLoss(Loss):
             assert self.pseudo_data is not None
             return self.pseudo_data * pseudo_flag + real_img * (1 - pseudo_flag)
 
-    def dual_contrastive_loss(self, gen_img, feat_gen_img, gen_c, real_img, real_c):
+    def exp_sim(self, feat_ind, anchor_ind, other_ind, feat_list_target, feat_list_src, temperature=0.07):
+        anchor_feat = torch.unsqueeze(
+            feat_list_target[feat_ind[anchor_ind]][anchor_ind].reshape(-1), 0).to(
+            torch.float32)
+        compare_feat = torch.unsqueeze(
+            feat_list_src[feat_ind[anchor_ind]][other_ind].reshape(-1), 0).to(torch.float32)
+
+        return torch.exp(self.sim(anchor_feat, compare_feat) / temperature)
+
+    def generator_contrastive_loss(self, feat_img, gen_z, gen_c):
         with torch.autograd.profiler.record_function("Gmain_dcl_forward"):
-            idx_anchor = np.random.randint(0, gen_img.size(0))
+            batch_size = gen_z.size(0)
+
+            idx_anchor = np.random.randint(0, batch_size)
+            feat_ind_G = np.random.randint(0, self.G_synthesis_src.n_latent, size=batch_size)
+
+            with torch.set_grad_enabled(False):
+                _, _, feat_img_src = self.run_G(gen_z, gen_c, sync=False, use_source=True, return_feats=True)
+
+            sims = [self.exp_sim(feat_ind_G, idx_anchor, idx, feat_img, feat_img_src) for idx in range(batch_size)]
+
+            gen_cl_loss = self.cl_D_weight * -torch.log(sims[idx_anchor] / torch.cat(sims, dim=0).sum(dim=0))
+            training_stats.report('Loss/G/contrastive', gen_cl_loss)
+
+            return gen_cl_loss
+
+    def discriminator_contrastive_loss(self, feat_img, feat_img_real, gen_z, gen_c):
+        with torch.autograd.profiler.record_function("Dmain_dcl_forward"):
+            batch_size = gen_z.size(0)
+
+            idx_anchor = np.random.randint(0, batch_size)
+            feat_ind_D = np.random.randint(0, self.D.num_feats, size=batch_size)
+
+            with torch.set_grad_enabled(False):
+                gen_img_src, _, _ = self.run_G(gen_z, gen_c, sync=False, use_source=True)
+                _, feat_img_src = self.run_D(gen_img_src, gen_c, is_subspace=0, sync=False, return_feats=True)
+
+            sims_real = [self.exp_sim(feat_ind_D, idx_anchor, idx, feat_img, feat_img_real) for idx in
+                         range(batch_size)]
+            sim_anchor = self.exp_sim(feat_ind_D, idx_anchor, idx_anchor, feat_img, feat_img_src)
+
+            D_cl_loss = self.cl_D_weight * -torch.log(
+                sim_anchor / (sim_anchor + torch.cat(sims_real, dim=0).sum(dim=0)))
+            training_stats.report('Loss/D/contrastive', D_cl_loss)
+
+            return D_cl_loss
 
     def dist_consistency_loss(self, gen_z):
         with torch.autograd.profiler.record_function("Gmain_dist_forward"):
@@ -284,7 +330,7 @@ class FewShotAdaptationLoss(Loss):
 
             return rel_loss
 
-    def accumulate_gradients(self, phase, real_img, real_c, gen_z, gen_c, sync, gain, is_subspace):
+    def accumulate_gradients(self, phase, real_img, real_c, gen_z, gen_c, sync, gain, is_subspace, adaptation):
         assert phase in ['Gmain', 'Greg', 'Gboth', 'Dmain', 'Dreg', 'Dboth']
         do_Gmain = (phase in ['Gmain', 'Gboth'])
         do_Dmain = (phase in ['Dmain', 'Dboth'])
@@ -294,19 +340,23 @@ class FewShotAdaptationLoss(Loss):
         # Gmain: Maximize logits for generated images.
         if do_Gmain:
             with torch.autograd.profiler.record_function('Gmain_forward'):
-                gen_img, _gen_ws, _ = self.run_G(gen_z, gen_c, sync=(sync and not do_Gpl),
-                                                 is_subspace=is_subspace)  # May get synced by Gpl.
+                gen_img, _gen_ws, feats_img = self.run_G(gen_z, gen_c, sync=(sync and not do_Gpl),
+                                                         # May get synced by Gpl.
+                                                         is_subspace=is_subspace,
+                                                         return_feats=True)
                 # Update pseudo data
                 self.pseudo_data = gen_img.detach()
-                gen_logits = self.run_D(gen_img, gen_c, sync=False, is_subspace=is_subspace)
+                gen_logits, _ = self.run_D(gen_img, gen_c, sync=False, is_subspace=is_subspace)
                 training_stats.report('Loss/scores/fake', gen_logits)
                 training_stats.report('Loss/signs/fake', gen_logits.sign())
                 loss_Gmain = torch.nn.functional.softplus(-gen_logits)  # -log(sigmoid(gen_logits))
                 training_stats.report('Loss/G/loss', loss_Gmain)
 
-            diversity_loss = self.dist_consistency_loss(gen_z)
+            loss_G_diversity = self.dist_consistency_loss(gen_z) if adaptation == "CDC" \
+                else self.generator_contrastive_loss(feats_img, gen_z, gen_c)
+
             with torch.autograd.profiler.record_function('Gmain_backward'):
-                (loss_Gmain + diversity_loss).mean().mul(gain).backward()
+                (loss_Gmain + loss_G_diversity).mean().mul(gain).backward()
 
         # Gpl: Apply path length regularization.
         if do_Gpl:
@@ -317,8 +367,8 @@ class FewShotAdaptationLoss(Loss):
                 pl_noise = torch.randn_like(gen_img) / np.sqrt(gen_img.shape[2] * gen_img.shape[3])
                 with torch.autograd.profiler.record_function('pl_grads'), conv2d_gradfix.no_weight_gradients():
                     pl_grads = \
-                    torch.autograd.grad(outputs=[(gen_img * pl_noise).sum()], inputs=[gen_ws], create_graph=True,
-                                        only_inputs=True)[0]
+                        torch.autograd.grad(outputs=[(gen_img * pl_noise).sum()], inputs=[gen_ws], create_graph=True,
+                                            only_inputs=True)[0]
                 pl_lengths = pl_grads.square().sum(2).mean(1).sqrt()
                 pl_mean = self.pl_mean.lerp(pl_lengths.mean(), self.pl_decay)
                 self.pl_mean.copy_(pl_mean.detach())
@@ -334,8 +384,9 @@ class FewShotAdaptationLoss(Loss):
         if do_Dmain:
             with torch.autograd.profiler.record_function('Dgen_forward'):
                 gen_img, _gen_ws, _ = self.run_G(gen_z, gen_c, sync=False, is_subspace=is_subspace)
-                gen_logits = self.run_D(gen_img, gen_c, sync=False,
-                                        is_subspace=is_subspace)  # Gets synced by loss_Dreal.
+                gen_logits, feats_gen = self.run_D(gen_img, gen_c, sync=False, # Gets synced by loss_Dreal.
+                                                   is_subspace=is_subspace,
+                                                   return_feats=True)
                 training_stats.report('Loss/scores/fake', gen_logits)
                 training_stats.report('Loss/signs/fake', gen_logits.sign())
                 loss_Dgen = torch.nn.functional.softplus(gen_logits)  # -log(1 - sigmoid(gen_logits))
@@ -353,25 +404,30 @@ class FewShotAdaptationLoss(Loss):
                 else:
                     real_img_tmp = real_img
                 real_img_tmp = real_img_tmp.detach().requires_grad_(do_Dr1)
-                real_logits = self.run_D(real_img_tmp, real_c, sync=sync, is_subspace=is_subspace)
+                real_logits, feats_real = self.run_D(real_img_tmp, real_c, sync=sync, is_subspace=is_subspace,
+                                                     return_feats=True)
                 training_stats.report('Loss/scores/real', real_logits)
                 training_stats.report('Loss/signs/real', real_logits.sign())
 
                 loss_Dreal = 0
+                loss_D_diversity = 0
                 if do_Dmain:
                     loss_Dreal = torch.nn.functional.softplus(-real_logits)  # -log(sigmoid(real_logits))
                     training_stats.report('Loss/D/loss', loss_Dgen + loss_Dreal)
+
+                    if adaptation == "DCL":
+                        loss_D_diversity = self.discriminator_contrastive_loss(feats_gen, feats_real, gen_z, gen_c)
 
                 loss_Dr1 = 0
                 if do_Dr1:
                     with torch.autograd.profiler.record_function('r1_grads'), conv2d_gradfix.no_weight_gradients():
                         r1_grads = \
-                        torch.autograd.grad(outputs=[real_logits.sum()], inputs=[real_img_tmp], create_graph=True,
-                                            only_inputs=True)[0]
+                            torch.autograd.grad(outputs=[real_logits.sum()], inputs=[real_img_tmp], create_graph=True,
+                                                only_inputs=True)[0]
                     r1_penalty = r1_grads.square().sum([1, 2, 3])
                     loss_Dr1 = r1_penalty * (self.r1_gamma / 2)
                     training_stats.report('Loss/r1_penalty', r1_penalty)
                     training_stats.report('Loss/D/reg', loss_Dr1)
 
             with torch.autograd.profiler.record_function(name + '_backward'):
-                (real_logits * 0 + loss_Dreal + loss_Dr1).mean().mul(gain).backward()
+                (real_logits * 0 + loss_Dreal + loss_Dr1 + loss_D_diversity).mean().mul(gain).backward()

@@ -490,7 +490,8 @@ def adaptation_loop(
     progress_fn             = None,     # Callback function for updating training progress. Called for all ranks.
     subspace_interval       = 4,        # How often to draw sample noise from the anchor region
     subspace_std            = 0.1,      # Std when drawing sample noise around anchor region
-    disable_sub_sampling = False,
+    disable_sub_sampling    = False,
+    adaptation              = "CDC",    # Adaptation type, either CDC (Cross Domain Consistency) or DCL (Dual Contrastive Loss)
     **kwargs
 ):
     # Initialize.
@@ -650,13 +651,13 @@ def adaptation_loop(
         progress_fn(0, total_kimg)
     while True:
 
-        subspace_sampling = 0 if disable_sub_sampling else batch_idx % subspace_interval # will use full discriminator if subspace sampling is deacticated
+        subspace_sampling = 0 if disable_sub_sampling or adaptation == "DCL" else batch_idx % subspace_interval # will use full discriminator if subspace sampling is deactivated
         # Fetch training data.
         with torch.autograd.profiler.record_function('data_fetch'):
             phase_real_img, phase_real_c = next(training_set_iterator)
             phase_real_img = (phase_real_img.to(device).to(torch.float32) / 127.5 - 1).split(batch_gpu)
             phase_real_c = phase_real_c.to(device).split(batch_gpu)
-            if subspace_sampling > 0 or disable_sub_sampling:
+            if subspace_sampling > 0 or disable_sub_sampling or adaptation == "DCL":
                 all_gen_z = torch.randn([len(phases) * batch_size, G.z_dim], device=device)
             else:
                 all_gen_z = get_subspace(len(phases) * batch_size, init_z.clone(), subspace_std)
@@ -683,7 +684,8 @@ def adaptation_loop(
             for round_idx, (real_img, real_c, gen_z, gen_c) in enumerate(zip(phase_real_img, phase_real_c, phase_gen_z, phase_gen_c)):
                 sync = (round_idx == batch_size // (batch_gpu * num_gpus) - 1)
                 gain = phase.interval
-                loss.accumulate_gradients(phase=phase.name, real_img=real_img, real_c=real_c, gen_z=gen_z, gen_c=gen_c, sync=sync, gain=gain, is_subspace=subspace_sampling)
+                loss.accumulate_gradients(phase=phase.name, real_img=real_img, real_c=real_c, gen_z=gen_z, gen_c=gen_c,
+                                          sync=sync, gain=gain, is_subspace=subspace_sampling, adaptation=adaptation)
 
             # Update weights.
             phase.module.requires_grad_(False)

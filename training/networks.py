@@ -604,6 +604,7 @@ class DiscriminatorBlock(torch.nn.Module):
             misc.assert_shape(x, [None, self.in_channels, self.resolution, self.resolution])
             x = x.to(dtype=dtype, memory_format=memory_format)
 
+        feat_list = []
         # FromRGB.
         if self.in_channels == 0 or self.architecture == 'skip':
             misc.assert_shape(img, [None, self.img_channels, self.resolution, self.resolution])
@@ -616,14 +617,18 @@ class DiscriminatorBlock(torch.nn.Module):
         if self.architecture == 'resnet':
             y = self.skip(x, gain=np.sqrt(0.5))
             x = self.conv0(x)
+            feat_list.append(x)
             x = self.conv1(x, gain=np.sqrt(0.5))
+            feat_list.append(x)
             x = y.add_(x)
         else:
             x = self.conv0(x)
+            feat_list.append(x)
             x = self.conv1(x)
+            feat_list.append(x)
 
         assert x.dtype == dtype
-        return x, img
+        return x, img, feat_list
 
 
 # ----------------------------------------------------------------------------
@@ -769,7 +774,7 @@ class Discriminator(torch.nn.Module):
         x = None
         for res in self.block_resolutions:
             block = getattr(self, f'b{res}')
-            x, img = block(x, img, **block_kwargs)
+            x, img, _ = block(x, img, **block_kwargs)
 
         cmap = None
         if self.c_dim > 0:
@@ -802,6 +807,7 @@ class PatchDiscriminator(torch.nn.Module):
         self.img_resolution_log2 = int(np.log2(img_resolution))
         self.img_channels = img_channels
         self.block_resolutions = [2 ** i for i in range(self.img_resolution_log2, 2, -1)]
+        self.num_feats = len(self.block_resolutions) * 2
         channels_dict = {res: min(channel_base // res, channel_max) for res in self.block_resolutions + [4]}
         fp16_resolution = max(2 ** (self.img_resolution_log2 + 1 - num_fp16_res), 8)
 
@@ -828,32 +834,36 @@ class PatchDiscriminator(torch.nn.Module):
         self.b4 = DiscriminatorEpilogue(channels_dict[4], cmap_dim=cmap_dim, resolution=4, **epilogue_kwargs,
                                         **common_kwargs)
 
-    def forward(self, img, c, extra=None, flag=None, p_ind=None, **block_kwargs):
+    def forward(self, img, c, extra=None, flag=None, p_ind=None, return_feats=False, **block_kwargs):
         x = None
 
-        feat = []
+        feat_patch = []
+        feat_list = []
         for i, res in enumerate(self.block_resolutions):
             block = getattr(self, f'b{res}')
             if i == 0:
                 x, img = block(x, img, **block_kwargs)
             else:
-                temp1 = block.conv0(x)
-                if flag is not None and (flag > 0) and (temp1.shape[1] == 512) and (temp1.shape[2] == 32 or temp1.shape[2] == 16):
-                    feat.append(temp1)
-                temp2 = block.conv1(temp1)
-                if flag is not None and (flag > 0) and (temp2.shape[1] == 512) and (temp2.shape[2] == 32 or temp2.shape[2] == 16):
-                    feat.append(temp2)
-                x, img = block(x, img, **block_kwargs)
-                if p_ind is not None and extra is not None and flag is not None and (flag > 0) and len(feat) == 4:
+                x, img, feats_block = block(x, img, **block_kwargs)
+                feat_list += feats_block
+                for f in feats_block:
+                    if flag is not None and (flag > 0) and (f.shape[1] == 512) and (f.shape[2] == 32 or f.shape[2] == 16):
+                        feat_patch.append(f)
+
+                if p_ind is not None and extra is not None and flag is not None and (flag > 0) and len(feat_patch) == 4:
                     # We use 4 possible intermediate feature maps to be used for patch-based adversarial loss. Any one of them is selected randomly during training.
-                    x = extra(feat[p_ind], p_ind)
+                    x = extra(feat_patch[p_ind], p_ind)
                     return x
 
         cmap = None
         if self.c_dim > 0:
             cmap = self.mapping(None, c)
         x = self.b4(x, img, cmap)
-        return x
+
+        if return_feats:
+            return x, feat_list
+
+        return x, None
 
 
 @persistence.persistent_class
