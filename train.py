@@ -48,6 +48,7 @@ def setup_training_loop_kwargs(
     kl_weight = None,
     high_p = 1,
     subspace_interval = None,
+    disable_subspace_sampling = None,
 
     # Dataset.
     data         = None, # Training dataset (required): <path>
@@ -253,6 +254,8 @@ def setup_training_loop_kwargs(
         if feat_const_batch is not None:
             args.loss_kwargs.feat_const_batch = feat_const_batch
         args.loss_kwargs.high_p = high_p
+
+        args.disable_sub_sampling = False if disable_subspace_sampling is None or not disable_subspace_sampling else True
 
     args.total_kimg = spec.kimg
     args.batch_size = spec.mb
@@ -493,6 +496,7 @@ class CommaSeparatedList(click.ParamType):
 @click.option('--seed', help='Random seed [default: 0]', type=int, metavar='INT')
 @click.option('-n', '--dry-run', help='Print training options and exit', is_flag=True)
 @click.option('--adaptation', help='Adapt GAN using few shot adaptation', is_flag=True)
+@click.option('--disable_subspace_sampling', help='Weather to do subspace sampling or not', is_flag=True)
 @click.option('--feat_const_batch', help='number of element to compute distance consistency loss [default: 4]', type=int, metavar='INT')
 @click.option('--subspace_interval', help='How often to sample in the anchor region [default: 4]', type=int, metavar='INT')
 @click.option('--kl_weight', help='Weight for kl consistency loss [default: 1000]', type=float)
