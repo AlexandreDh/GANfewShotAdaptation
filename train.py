@@ -491,7 +491,7 @@ def subprocess_fn(rank, args, temp_dir):
         custom_ops.verbosity = 'none'
 
     # Execute training loop.
-    if not args.adaptation or (isinstance(args.adapation, str) and args.adaptation.lower() == "none"):
+    if not args.adaptation or (isinstance(args.adaptation, str) and args.adaptation.lower() == "none"):
         training_loop.training_loop(rank=rank, **args)
     else:
         training_loop.adaptation_loop(rank=rank, **args)
