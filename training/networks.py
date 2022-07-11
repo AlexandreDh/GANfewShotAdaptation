@@ -841,11 +841,10 @@ class PatchDiscriminator(torch.nn.Module):
         feat_list = []
         for i, res in enumerate(self.block_resolutions):
             block = getattr(self, f'b{res}')
-            if i == 0:
-                x, img = block(x, img, **block_kwargs)
-            else:
-                x, img, feats_block = block(x, img, **block_kwargs)
-                feat_list += feats_block
+            x, img, feats_block = block(x, img, **block_kwargs)
+            feat_list += feats_block
+
+            if i > 0:
                 for f in feats_block:
                     if flag is not None and (flag > 0) and (f.shape[1] == 512) and (f.shape[2] == 32 or f.shape[2] == 16):
                         feat_patch.append(f)
