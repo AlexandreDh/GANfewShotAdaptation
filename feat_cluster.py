@@ -75,7 +75,7 @@ def assign_to_cluster_centers(n_samples, outdir, center_folder, network_pkl, see
         images_files = os.listdir(generated_dir)
         for idx, file in enumerate(images_files):
             img = preprocess_lpips(Image.open(os.path.join(generated_dir, file))).to(device).repeat(num_centers, 1, 1, 1)
-            
+
             distances = lpips_fn(img, centers)
             images_centers[idx] = distances.argmin()
 
@@ -98,6 +98,7 @@ def intra_cluster_dist(num_centers, images_files, images_centers, images_folder,
             images_idx = np.argwhere(images_centers == k)
             rng.shuffle(images_idx)
             images_idx = images_idx[:cluster_size, :]
+            print(f"Cluster {k} - num images: {images_idx.shape}")
 
             dists = []
             for i in range(len(images_idx)):
@@ -198,4 +199,4 @@ if __name__ == '__main__':
     n_centers, img_files, img_centers = assign_to_cluster_centers(args.cluster_size_generate, args.outdir,
                                                                           args.center_dir, args.network_pkl,
                                                                           seed=args.seed, batch_size=args.batch_size)
-    intra_cluster_dist(n_centers, img_files, img_centers, args.outdir)
+    intra_cluster_dist(n_centers, img_files, img_centers, os.path.join(args.outdir, "generated"))
