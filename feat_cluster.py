@@ -68,15 +68,14 @@ def assign_to_cluster_centers(n_samples, outdir, center_folder, network_pkl, see
         centers = [preprocess_lpips(Image.open(os.path.join(center_folder, f))).to(device) for f in
                    os.listdir(center_folder)]
         num_centers = len(centers)
-        centers = torch.cat(centers, dim=0)
+        centers = torch.stack(centers, dim=0)
 
         images_centers = torch.zeros([n_samples], dtype=torch.long).to(device)
 
         images_files = os.listdir(generated_dir)
         for idx, file in enumerate(images_files):
             img = preprocess_lpips(Image.open(os.path.join(generated_dir, file))).to(device).repeat(num_centers, 1, 1, 1)
-            print(img.size())
-            print(centers.size())
+            
             distances = lpips_fn(img, centers)
             images_centers[idx] = distances.argmin()
 
