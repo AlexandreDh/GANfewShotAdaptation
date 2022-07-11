@@ -57,8 +57,9 @@ def assign_to_cluster_centers(n_samples, outdir, center_folder, network_pkl, see
             images = G(z, c)
             images = (images.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
 
-            for idx_img, img in enumerate(images):
-                PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB').save(
+            for idx_img in range(images.size(0)):
+                img = images[idx_img]
+                PIL.Image.fromarray(img.cpu().numpy(), 'RGB').save(
                     os.path.join(generated_dir, f'{idx * batch_size + idx_img:06d}.png'))
 
         del G, all_z, all_c
