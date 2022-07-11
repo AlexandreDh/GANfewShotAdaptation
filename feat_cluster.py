@@ -75,6 +75,8 @@ def assign_to_cluster_centers(n_samples, outdir, center_folder, network_pkl, see
         images_files = os.listdir(generated_dir)
         for idx, file in enumerate(images_files):
             img = preprocess_lpips(Image.open(os.path.join(generated_dir, file))).to(device).repeat(num_centers, 1, 1, 1)
+            print(img.size())
+            print(centers.size())
             distances = lpips_fn(img, centers)
             images_centers[idx] = distances.argmin()
 
