@@ -430,4 +430,4 @@ class FewShotAdaptationLoss(Loss):
                     training_stats.report('Loss/D/reg', loss_Dr1)
 
             with torch.autograd.profiler.record_function(name + '_backward'):
-                (real_logits * 0 + loss_Dreal + loss_Dr1 + loss_D_diversity).mean().mul(gain).backward()
+                (real_logits * 0 + feats_real * 0 + loss_Dreal + loss_Dr1 + loss_D_diversity).mean().mul(gain).backward()
