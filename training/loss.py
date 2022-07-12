@@ -392,7 +392,7 @@ class FewShotAdaptationLoss(Loss):
                 training_stats.report('Loss/signs/fake', gen_logits.sign())
                 loss_Dgen = torch.nn.functional.softplus(gen_logits)  # -log(1 - sigmoid(gen_logits))
             with torch.autograd.profiler.record_function('Dgen_backward'):
-                loss_Dgen.mean().mul(gain).backward()
+                loss_Dgen.mean().mul(gain).backward(retain_graph=True)
 
         # Dmain: Maximize logits for real images.
         # Dr1: Apply R1 regularization.
@@ -420,12 +420,9 @@ class FewShotAdaptationLoss(Loss):
                         loss_D_diversity = self.discriminator_contrastive_loss(feats_gen, feats_real, gen_z, gen_c)
 
                 loss_Dr1 = 0
-                real_logits_reg = torch.zeros([1], device=gen_z.device)
                 if do_Dr1:
-                    real_logits_reg, _ = self.run_D(real_img_tmp, real_c, sync=sync, is_subspace=is_subspace)
-
                     with torch.autograd.profiler.record_function('r1_grads'), conv2d_gradfix.no_weight_gradients():
-                        r1_grads = torch.autograd.grad(outputs=[real_logits_reg.sum()], inputs=[real_img_tmp],
+                        r1_grads = torch.autograd.grad(outputs=[real_logits.sum()], inputs=[real_img_tmp],
                                                        create_graph=True, only_inputs=True)[0]
 
                     r1_penalty = r1_grads.square().sum([1, 2, 3])
@@ -434,4 +431,4 @@ class FewShotAdaptationLoss(Loss):
                     training_stats.report('Loss/D/reg', loss_Dr1)
 
             with torch.autograd.profiler.record_function(name + '_backward'):
-                (real_logits * 0 + real_logits_reg * 0 + loss_Dreal + loss_Dr1 + loss_D_diversity).mean().mul(gain).backward()
+                (real_logits * 0 + loss_Dreal + loss_Dr1 + loss_D_diversity).mean().mul(gain).backward()

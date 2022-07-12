@@ -55,7 +55,7 @@ def assign_to_cluster_centers(n_samples, outdir, center_folder, network_pkl, see
 
     num_iter =  n_samples // batch_size + 1 if n_samples % batch_size > 0 else 0
     pbar = tqdm(range(num_iter))
-    
+
     with torch.no_grad():
         for idx in pbar:
             z = all_z[idx]
@@ -80,7 +80,10 @@ def assign_to_cluster_centers(n_samples, outdir, center_folder, network_pkl, see
         images_centers = torch.zeros([n_samples], dtype=torch.long).to(device)
 
         images_files = os.listdir(generated_dir)
-        for idx, file in enumerate(images_files):
+        pbar = tqdm(range(len(images_files)))
+        print("Assign to cluster center")
+        for idx in pbar:
+            file = images_files[idx]
             img = preprocess_lpips(Image.open(os.path.join(generated_dir, file))).to(device).repeat(num_centers, 1, 1, 1)
 
             distances = lpips_fn(img, centers)
