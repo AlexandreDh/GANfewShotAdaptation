@@ -420,7 +420,7 @@ class FewShotAdaptationLoss(Loss):
                         loss_D_diversity = self.discriminator_contrastive_loss(feats_gen, feats_real, gen_z, gen_c)
 
                 loss_Dr1 = 0
-                real_logits_reg = torch.zeros([1])
+                real_logits_reg = torch.zeros([1], device=gen_z.device)
                 if do_Dr1:
                     real_logits_reg, _ = self.run_D(real_img_tmp, real_c, sync=sync, is_subspace=is_subspace)
 
