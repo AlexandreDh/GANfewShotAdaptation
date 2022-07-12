@@ -187,7 +187,7 @@ class FewShotAdaptationLoss(Loss):
         self.feat_const_batch = feat_const_batch
         self.kl_weight = kl_weight
         self.high_p = max(min(high_p, 4), 1)
-        self.cl_D_weight = cl_G_weight
+        self.cl_G_weight = cl_G_weight
         self.cl_D_weight = cl_D_weight
         self.with_dataaug = with_dataaug
         self.pseudo_data = None
@@ -255,10 +255,10 @@ class FewShotAdaptationLoss(Loss):
 
             sims = [self.exp_sim(feat_ind_G, idx_anchor, idx, feat_img, feat_img_src) for idx in range(batch_size)]
 
-            gen_cl_loss = self.cl_D_weight * -torch.log(sims[idx_anchor] / torch.cat(sims, dim=0).sum(dim=0))
-            training_stats.report('Loss/G/contrastive', gen_cl_loss)
+            G_cl_loss = self.cl_G_weight * -torch.log(sims[idx_anchor] / torch.cat(sims, dim=0).sum(dim=0))
+            training_stats.report('Loss/G/contrastive', G_cl_loss)
 
-            return gen_cl_loss
+            return G_cl_loss
 
     def discriminator_contrastive_loss(self, feat_img, feat_img_real, gen_z, gen_c):
         with torch.autograd.profiler.record_function("Dmain_dcl_forward"):
