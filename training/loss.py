@@ -11,6 +11,7 @@ import torch
 from torch_utils import training_stats
 from torch_utils import misc
 from torch_utils.ops import conv2d_gradfix
+import tqdm
 
 
 # ----------------------------------------------------------------------------
@@ -430,4 +431,9 @@ class FewShotAdaptationLoss(Loss):
                     training_stats.report('Loss/D/reg', loss_Dr1)
 
             with torch.autograd.profiler.record_function(name + '_backward'):
-                (real_logits * 0 + torch.cat(feats_real, dim=0) * 0 + loss_Dreal + loss_Dr1 + loss_D_diversity).mean().mul(gain).backward()
+                sum_feats = 0
+                if adaptation == "DCL":
+                    for f in feats_real:
+                        sum_feats += f * 0
+
+                (real_logits * 0 + sum_feats + loss_Dreal + loss_Dr1 + loss_D_diversity).mean().mul(gain).backward()

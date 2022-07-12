@@ -4,6 +4,7 @@ import random
 import PIL
 import torch
 import lpips
+from tqdm import tqdm
 from torchvision import transforms
 import os
 import dnnlib
@@ -52,8 +53,15 @@ def assign_to_cluster_centers(n_samples, outdir, center_folder, network_pkl, see
     generated_dir = os.path.join(outdir, "generated")
     os.makedirs(generated_dir, exist_ok=True)
 
+    num_iter =  n_samples // batch_size + 1 if n_samples % batch_size > 0 else 0
+    pbar = tqdm(num_iter)
     with torch.no_grad():
-        for idx, (z, c) in enumerate(zip(all_z, all_c)):
+        for idx in pbar:
+            start = idx * batch_size
+            end = (idx + 1) * batch_size
+            z = all_z[start:end]
+            c = all_c[start:end]
+
             images = G(z, c)
             images = (images.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
 
