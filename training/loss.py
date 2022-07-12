@@ -434,6 +434,6 @@ class FewShotAdaptationLoss(Loss):
                 sum_feats = 0
                 if adaptation == "DCL":
                     for f in feats_real:
-                        sum_feats += f * 0
+                        sum_feats += f.mean() * 0
 
                 (real_logits * 0 + sum_feats + loss_Dreal + loss_Dr1 + loss_D_diversity).mean().mul(gain).backward()
