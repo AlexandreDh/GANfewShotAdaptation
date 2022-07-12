@@ -651,13 +651,13 @@ def adaptation_loop(
         progress_fn(0, total_kimg)
     while True:
 
-        subspace_sampling = 0 if disable_sub_sampling or adaptation == "DCL" else batch_idx % subspace_interval # will use full discriminator if subspace sampling is deactivated
+        subspace_sampling = 0 if disable_sub_sampling else batch_idx % subspace_interval # will use full discriminator if subspace sampling is deactivated
         # Fetch training data.
         with torch.autograd.profiler.record_function('data_fetch'):
             phase_real_img, phase_real_c = next(training_set_iterator)
             phase_real_img = (phase_real_img.to(device).to(torch.float32) / 127.5 - 1).split(batch_gpu)
             phase_real_c = phase_real_c.to(device).split(batch_gpu)
-            if subspace_sampling > 0 or disable_sub_sampling or adaptation == "DCL":
+            if subspace_sampling > 0 or disable_sub_sampling:
                 all_gen_z = torch.randn([len(phases) * batch_size, G.z_dim], device=device)
             else:
                 all_gen_z = get_subspace(len(phases) * batch_size, init_z.clone(), subspace_std)
