@@ -54,7 +54,7 @@ def assign_to_cluster_centers(n_samples, outdir, center_folder, network_pkl, see
     os.makedirs(generated_dir, exist_ok=True)
 
     num_iter =  n_samples // batch_size + 1 if n_samples % batch_size > 0 else 0
-    pbar = tqdm(num_iter)
+    pbar = tqdm(range(num_iter))
     with torch.no_grad():
         for idx in pbar:
             start = idx * batch_size
