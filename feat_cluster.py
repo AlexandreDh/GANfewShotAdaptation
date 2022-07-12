@@ -55,14 +55,11 @@ def assign_to_cluster_centers(n_samples, outdir, center_folder, network_pkl, see
 
     num_iter =  n_samples // batch_size + 1 if n_samples % batch_size > 0 else 0
     pbar = tqdm(range(num_iter))
-    print(all_z.shape)
+    
     with torch.no_grad():
         for idx in pbar:
-            start = idx * batch_size
-            end = (idx + 1) * batch_size
-            print(f"start {start} - end {end}")
-            z = all_z[start:end, :]
-            c = all_c[start:end]
+            z = all_z[idx]
+            c = all_c[idx]
 
             images = G(z, c)
             images = (images.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
