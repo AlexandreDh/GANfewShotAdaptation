@@ -420,13 +420,10 @@ class FewShotAdaptationLoss(Loss):
                         loss_D_diversity = self.discriminator_contrastive_loss(feats_gen, feats_real, gen_z, gen_c)
 
                 loss_Dr1 = 0
-                sum_feats = 0
-                for f in feats_real:
-                    sum_feats += f.sum()
                 if do_Dr1:
                     with torch.autograd.profiler.record_function('r1_grads'), conv2d_gradfix.no_weight_gradients():
-                        r1_grads, feat_grad = torch.autograd.grad(outputs=[real_logits.sum(), sum_feats], inputs=[real_img_tmp, real_img_tmp],
-                                                       create_graph=True, only_inputs=True, retain_graph=True)
+                        r1_grads = torch.autograd.grad(outputs=[real_logits.sum()], inputs=[real_img_tmp],
+                                                       create_graph=True, only_inputs=True)[0]
 
                     r1_penalty = r1_grads.square().sum([1, 2, 3])
                     loss_Dr1 = r1_penalty * (self.r1_gamma / 2)
@@ -434,4 +431,4 @@ class FewShotAdaptationLoss(Loss):
                     training_stats.report('Loss/D/reg', loss_Dr1)
 
             with torch.autograd.profiler.record_function(name + '_backward'):
-                (real_logits * 0 + sum_feats * 0 + feat_grad.sum() * 0 + loss_Dreal + loss_Dr1 + loss_D_diversity).mean().mul(gain).backward()
+                (real_logits * 0 + loss_Dreal + loss_Dr1 + loss_D_diversity).mean().mul(gain).backward()
