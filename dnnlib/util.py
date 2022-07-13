@@ -75,6 +75,9 @@ class Logger(object):
     def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
         self.close()
 
+    def isatty(self):
+        return self.stdout.isatty()
+
     def write(self, text: Union[str, bytes]) -> None:
         """Write text to stdout (and a file) and optionally flush."""
         if isinstance(text, bytes):
