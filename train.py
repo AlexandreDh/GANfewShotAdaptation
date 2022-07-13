@@ -48,6 +48,8 @@ def setup_training_loop_kwargs(
         # Few shot adapation options
         feat_const_batch=None,
         kl_weight=None,
+        gcl_weight=None,
+        dcl_weight=None,
         high_p=1,
         subspace_interval=None,
         disable_subspace_sampling=None,
@@ -267,6 +269,10 @@ def setup_training_loop_kwargs(
     if args.adaptation:
         if kl_weight is not None:
             args.loss_kwargs.kl_weight = kl_weight
+        if gcl_weight is not None:
+            args.loss_kwargs.cl_G_weight = gcl_weight
+        if dcl_weight is not None:
+            args.loss_kwargs.cl_D_weight = dcl_weight
         if feat_const_batch is not None:
             args.loss_kwargs.feat_const_batch = feat_const_batch
         args.loss_kwargs.high_p = high_p
@@ -526,6 +532,8 @@ class CommaSeparatedList(click.ParamType):
 @click.option('--subspace_interval', help='How often to sample in the anchor region [default: 4]', type=int,
               metavar='INT')
 @click.option('--kl_weight', help='Weight for kl consistency loss [default: 1000]', type=float)
+@click.option('--gcl_weight', help='Weight for generator contrastive loss [default: 2]', type=float)
+@click.option('--dcl_weight', help='Weight for discriminator contrastive loss [default: 0.5]', type=float)
 @click.option('--high_p', help='Number of layers to use for Patch Discriminator [default: 1]', type=int, metavar="INT")
 @click.option('--metrics_ticks', help='Interval at which metrics is computed', type=int, metavar='INT')
 @click.option('--network_snapshot_ticks', help='Interval at which network is snapshot', type=int, metavar='INT')
