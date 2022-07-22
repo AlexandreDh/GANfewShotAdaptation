@@ -75,7 +75,7 @@ def generate_style_mix(
     w_dict = {seed: w for seed, w in zip(all_seeds, list(all_w))}
 
     print('Generating images...')
-    all_images = G.synthesis(all_w, noise_mode=noise_mode)
+    all_images, _ = G.synthesis(all_w, noise_mode=noise_mode)
     all_images = (all_images.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8).cpu().numpy()
     image_dict = {(seed, seed): image for seed, image in zip(all_seeds, list(all_images))}
 
@@ -84,14 +84,14 @@ def generate_style_mix(
         for col_seed in col_seeds:
             w = w_dict[row_seed].clone()
             w[col_styles] = w_dict[col_seed][col_styles]
-            image = G.synthesis(w[np.newaxis], noise_mode=noise_mode)
+            image, _ = G.synthesis(w[np.newaxis], noise_mode=noise_mode)
             image = (image.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
             image_dict[(row_seed, col_seed)] = image[0].cpu().numpy()
 
     print('Saving images...')
     os.makedirs(outdir, exist_ok=True)
-    for (row_seed, col_seed), image in image_dict.items():
-        PIL.Image.fromarray(image, 'RGB').save(f'{outdir}/{row_seed}-{col_seed}.png')
+    # for (row_seed, col_seed), image in image_dict.items():
+    #     PIL.Image.fromarray(image, 'RGB').save(f'{outdir}/{row_seed}-{col_seed}.png')
 
     print('Saving image grid...')
     W = G.img_resolution

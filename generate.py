@@ -22,7 +22,8 @@ import torchvision.utils as vsutils
 
 import legacy
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 
 def num_range(s: str) -> List[int]:
     '''Accept either a comma separated list of numbers 'a,b,c' or a range 'a-c' and return as a list of ints.'''
@@ -30,11 +31,12 @@ def num_range(s: str) -> List[int]:
     range_re = re.compile(r'^(\d+)-(\d+)$')
     m = range_re.match(s)
     if m:
-        return list(range(int(m.group(1)), int(m.group(2))+1))
+        return list(range(int(m.group(1)), int(m.group(2)) + 1))
     vals = s.split(',')
     return [int(x) for x in vals]
 
-#----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 
 @click.command()
 @click.pass_context
@@ -42,20 +44,21 @@ def num_range(s: str) -> List[int]:
 @click.option('--seeds', type=num_range, help='List of random seeds')
 @click.option('--trunc', 'truncation_psi', type=float, help='Truncation psi', default=1, show_default=True)
 @click.option('--class', 'class_idx', type=int, help='Class label (unconditional if not specified)')
-@click.option('--noise-mode', help='Noise mode', type=click.Choice(['const', 'random', 'none']), default='const', show_default=True)
+@click.option('--noise-mode', help='Noise mode', type=click.Choice(['const', 'random', 'none']), default='const',
+              show_default=True)
 @click.option('--projected-w', help='Projection result file', type=str, metavar='FILE')
 @click.option('--outdir', help='Where to save the output image', type=str, required=True, metavar='DIR')
-@click.option('--outname', help='Base name for the output image', type=str, required=True, metavar='FILE')
+@click.option('--outname', help='Base name for the output image grid', type=str, required=True, metavar='FILE')
 def generate_images(
-    ctx: click.Context,
-    network_pkl: str,
-    seeds: Optional[List[int]],
-    truncation_psi: float,
-    noise_mode: str,
-    outdir: str,
-    outname: str,
-    class_idx: Optional[int],
-    projected_w: Optional[str]
+        ctx: click.Context,
+        network_pkl: str,
+        seeds: Optional[List[int]],
+        truncation_psi: float,
+        noise_mode: str,
+        outdir: str,
+        outname: str,
+        class_idx: Optional[int],
+        projected_w: Optional[str]
 ):
     """Generate images using pretrained network pickle.
 
@@ -85,17 +88,17 @@ def generate_images(
     print('Loading networks from "%s"...' % network_pkl)
     device = torch.device('cuda')
     with dnnlib.util.open_url(network_pkl) as f:
-        G = legacy.load_network_pkl(f)['G_ema'].to(device) # type: ignore
+        G = legacy.load_network_pkl(f)['G_ema'].to(device)  # type: ignore
 
     os.makedirs(outdir, exist_ok=True)
 
     # Synthesize the result of a W projection.
     if projected_w is not None:
         if seeds is not None:
-            print ('warn: --seeds is ignored when using --projected-w')
+            print('warn: --seeds is ignored when using --projected-w')
         print(f'Generating images from projected W "{projected_w}"')
         ws = np.load(projected_w)['w']
-        ws = torch.tensor(ws, device=device) # pylint: disable=not-callable
+        ws = torch.tensor(ws, device=device)  # pylint: disable=not-callable
         assert ws.shape[1:] == (G.num_ws, G.w_dim)
         for idx, w in enumerate(ws):
             img = G.synthesis(w.unsqueeze(0), noise_mode=noise_mode)
@@ -114,7 +117,7 @@ def generate_images(
         label[:, class_idx] = 1
     else:
         if class_idx is not None:
-            print ('warn: --class=lbl ignored when running on an unconditional network')
+            print('warn: --class=lbl ignored when running on an unconditional network')
 
     # Generate images.
     images = []
@@ -122,15 +125,15 @@ def generate_images(
         print('Generating image for seed %d (%d/%d) ...' % (seed, seed_idx, len(seeds)))
         z = torch.from_numpy(np.random.RandomState(seed).randn(1, G.z_dim)).to(device)
         img = G(z, label, truncation_psi=truncation_psi, noise_mode=noise_mode)
-        images.append(img.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8))
-        
-    
-    images = torch.cat(images, dim=0)
-    vutils.save_image(images.cpu(), f'{outdir}/{outname}_seeds{seeds[0]}-{seeds[-1]}.png', nrow=12, padding=0)
+        images.append((img.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8))
 
-#----------------------------------------------------------------------------
+    images = torch.cat(images, dim=0)
+    vsutils.save_image(images.cpu(), f'{outdir}/{outname}_seeds{seeds[0]}-{seeds[-1]}.png', nrow=12, padding=0)
+
+
+# ----------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    generate_images() # pylint: disable=no-value-for-parameter
+    generate_images()  # pylint: disable=no-value-for-parameter
 
-#----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
