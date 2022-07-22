@@ -28,6 +28,7 @@ import tempfile
 import urllib
 import urllib.request
 import uuid
+from google.cloud import storage
 
 from distutils.util import strtobool
 from typing import Any, List, Tuple, Union
@@ -360,6 +361,43 @@ def copy_files_and_create_dirs(files: List[Tuple[str, str]]) -> None:
 
         shutil.copyfile(file[0], file[1])
 
+
+# Google Cloud Storage helpers
+
+def upload_blob_from_file(bucket_name, filepath, destination_blob_name):
+    """
+    Upload a bytes in memory files to a bucket
+    Args:
+        bucket_name: the GCD bucket id
+        filepath: the local filepath to upload
+        destination_blob_name: The ID of the GCS object
+
+    """
+
+    storage_client = storage.Client()
+    bucket = storage_client.bucket(bucket_name)
+    blob = bucket.blob(destination_blob_name)
+
+    with open(filepath, "rb") as f:
+        blob.upload_from_file(f)
+
+
+def download_blob_to_file(bucket_name, filepath, blob_name):
+    """
+    
+    Args:
+        bucket_name: the GCD bucket id
+        filepath: the filepath to download to
+        blob_name: The ID of the GCS object
+
+    """
+
+    storage_client = storage.Client()
+    bucket = storage_client.bucket(bucket_name)
+    blob = bucket.blob(blob_name)
+
+    with open(filepath, "wb") as f:
+        blob.download_from_file(f)
 
 # URL helpers
 # ------------------------------------------------------------------------------------------

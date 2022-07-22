@@ -10,7 +10,7 @@
 "Deceive D: Adaptive Pseudo Augmentation for GAN Training with Limited Data".
 The code is heavily borrowed from the paper
 "Training Generative Adversarial Networks with Limited Data"."""
-
+import math
 import os
 import click
 import re
@@ -44,6 +44,7 @@ def setup_training_loop_kwargs(
         seed=None,  # Random seed: <int>, default = 0
         adaptation=None,  # running few shot adaptation
         kimg_per_tick=None,
+        use_bucket=None,
 
         # Few shot adapation options
         feat_const_batch=None,
@@ -525,6 +526,7 @@ class CommaSeparatedList(click.ParamType):
 @click.option('--snap', help='Snapshot interval [default: 50 ticks]', type=int, metavar='INT')
 @click.option('--seed', help='Random seed [default: 0]', type=int, metavar='INT')
 @click.option('-n', '--dry-run', help='Print training options and exit', is_flag=True)
+@click.option('--use_bucket', help='Use a bucket to read from and save results. Override the outdir argument', is_flag=True)
 @click.option('--disable_subspace_sampling', help='Weather to do subspace sampling or not', is_flag=True)
 @click.option('--adaptation', help='GAN Adaptation [default: none]', type=click.Choice(['none', 'CDC', 'DCL']))
 @click.option('--feat_const_batch', help='number of element to compute distance consistency loss [default: 4]',
@@ -636,7 +638,7 @@ def main(ctx, outdir, dry_run, adaptation, **config_kwargs):
     prev_run_ids = [re.match(r'^\d+', x) for x in prev_run_dirs]
     prev_run_ids = [int(x.group()) for x in prev_run_ids if x is not None]
     cur_run_id = max(prev_run_ids, default=-1) + 1
-    args.run_dir = os.path.join(outdir, f'{cur_run_id:05d}-{run_desc}')
+    args.run_dir = os.path.join(outdir, f'{cur_run_id:05d}-{run_desc}') if not args.use_bucket else os.path.join(outdir, run_desc)
     assert not os.path.exists(args.run_dir)
 
     # Print options.
